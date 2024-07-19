@@ -91,9 +91,12 @@ module {
 
   public type ICRC85Options = {
     kill_switch: ?Bool;
-    handler: ?(([(Text, Nat, ICRC16Map)]) -> ());
+    handler: ?(([(Text, ICRC16Map)]) -> ());
     period: ?Nat;
     tree: ?[Text];
+    asset: ?Text;
+    platform: ?Text;
+    
     collector: ?Principal;
   };
 
