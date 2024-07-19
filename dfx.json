@@ -1,0 +1,25 @@
+{
+    "version": 1,
+    "canisters": {
+        "icrc75": {
+            "type": "motoko",
+            "main": "src/Canisters/example.mo"
+        },
+
+        "test": {
+          "type": "motoko",
+          "main": "tests/ActorTest.mo",
+          "args": "-v --compacting-gc"
+      }
+    },
+    "defaults": {
+        "build": {
+            "packtool": "mops sources",
+            "args": ""
+        },
+        "replica": {
+          "subnet_type": "system"
+      }
+    }
+    
+}
