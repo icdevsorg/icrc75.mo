@@ -66,6 +66,7 @@ shared ({ caller = _owner }) actor class Token  (
     private func get_icrc75_environment() : ICRC75.Environment {
     {
       advanced = null;
+      tt = null; // for recovery and safety you likely want to provide a timer tool instance here
       addRecord = ?fakeledgerAddRecord;
       icrc10_register_supported_standards = func(a : ICRC10Record): Bool {
         Set.add(icrc10, icrc10Hash, a);

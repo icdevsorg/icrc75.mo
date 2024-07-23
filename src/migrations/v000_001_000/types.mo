@@ -34,6 +34,7 @@ import BTreeLib "mo:stableheapbtreemap/BTree";
 import ICRC16Lib "mo:candy/types";
 import ICRC16ConversionLib "mo:candy/conversion";
 import Account "mo:icrc1-mo/ICRC1/Account";
+import TT "../../../../timerTool/src/";
 
 module {
 
@@ -96,7 +97,6 @@ module {
     tree: ?[Text];
     asset: ?Text;
     platform: ?Text;
-    
     collector: ?Principal;
   };
 
@@ -757,8 +757,9 @@ module {
   public type Environment = {
     /// Reference to the ICRC-1 ledger interface.
     advanced : ?{
-      ICRC85 : ICRC85Options;
+      icrc85 : ICRC85Options;
     };
+    tt : ?TT.TimerTool;
     addRecord: ?(<system>(Value, ?Value) -> Nat);
     icrc10_register_supported_standards : (({
         name: Text;
@@ -783,11 +784,17 @@ module {
     memberIndex : Map.Map<ListItem, Set.Set<List>>;
     permissionsIndex : Map.Map<ListItem, Set.Set<List>>;
     var owner : Principal;
+    icrc85: {
+      var nextCycleActionId: ?Nat;
+      var lastActionReported: ?Nat;
+      var activeActions: Nat;
+    };
     metadata: {
       var defaultTake: Nat;
       var maxTake: Nat;
       var permittedDrift: Nat;
       var txWindow: Nat;
     };
+    var tt : ?TT.State;
   };
 };

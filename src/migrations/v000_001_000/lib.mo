@@ -132,6 +132,11 @@ module {
       namespaceStore = namespacesStore;
       domainIndex = domainIndex;
       memberIndex = memberIndex;
+      icrc85 = {
+        var nextCycleActionId = null;
+        var lastActionReported = null;
+        var activeActions = 0;
+      };
       permissionsIndex = permissionsIndex;
       var owner = caller;
       metadata = {
@@ -140,6 +145,7 @@ module {
         var defaultTake = defaultTake;
         var txWindow = txWindow;
       };
+      var tt = null;
     };
 
     

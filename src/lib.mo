@@ -1,7 +1,9 @@
 import Blob "mo:base/Blob";
 import Array "mo:base/Array";
 import Buffer "mo:base/Buffer";
+import Cycles "mo:base/ExperimentalCycles";
 import D "mo:base/Debug";
+import Error "mo:base/Error";
 import Int "mo:base/Int";
 import Iter "mo:base/Iter";
 import Nat "mo:base/Nat";
@@ -12,7 +14,11 @@ import Text "mo:base/Text";
 import Time "mo:base/Time";
 import List "mo:base/List";
 import Account "mo:icrc1-mo/ICRC1/Account";
+import Timer "mo:base/Timer";
 
+import TT "../../timerTool/src/";
+import ovsfixed "mo:ovs-fixed";
+import Star "mo:star/star";
 
 import Migration "./migrations";
 import MigrationTypes "./migrations/types";
@@ -248,13 +254,20 @@ module {
       registerListener<PropertyChangeListener>(namespace, remote_func, propertyChangeListeners);
     };
 
+
+    let OneDay =  86_400_000_000_000;
+
     ///MARK: actor mangement
 
     /// Updates actor information such as transaction and query variables.
     /// - Parameters:
     ///     - request: `[UpdateLedgerInfoRequest]` - A list of requests containing the updates to be applied to the ledger.
     /// - Returns: `[Bool]` - An array of booleans indicating the success of each update request.
-    public func updateProperties(caller : Principal, request: ManageRequest) : ManageResponse{
+    public func updateProperties<system>(caller : Principal, request: ManageRequest) : ManageResponse{
+
+      //make sure tt is set
+      ignore tt<system>();
+      state.icrc85.activeActions := state.icrc85.activeActions + 1;
 
       if(state.owner != caller){
         return [?#Err(#Unauthorized)];
@@ -334,6 +347,10 @@ module {
     ///MARK: ICRC75 UPDATE
 
     public func manage_list_membership(caller: Principal, request: ManageListMembershipRequest, canChange: CanChangeMembership) : async* ManageListMembershipResponse {
+
+      ignore tt<system>();
+      state.icrc85.activeActions := state.icrc85.activeActions + 1;
+
       //check permissions
       let cache = Map.new<Text, NamespaceRecord>();
 
@@ -492,6 +509,10 @@ module {
     };
 
     public func manage_list_properties(caller: Principal, request: ManageListPropertiesRequest, canChange: CanChangeProperty) : async* ManageListPropertyResponse {
+
+      ignore tt<system>();
+      state.icrc85.activeActions := state.icrc85.activeActions + 1;
+
       //check permissions
       let cache = Map.new<Text, NamespaceRecord>();
       let cachePermissions = Map.new<Text, NamespaceRecord>();
@@ -1846,5 +1867,118 @@ module {
         Set.add(found, Set.thash, record.namespace);
       };
     };
+
+    private func get_time() : Nat {
+      Int.abs(Time.now());
+    };
+
+    private func scheduleCycleShare<system>() : async() {
+      //check to see if it already exists
+      switch(state.icrc85.nextCycleActionId){
+        case(?val){
+          switch(Map.get(tt().getState().actionIdIndex, Map.nhash, val)){
+            case(?time) {
+              //already in the queue
+              return;
+            };
+            case(null) {};
+          };
+        };
+        case(null){};
+      };
+
+      let result = tt<system>().setActionSync<system>(get_time(), ({actionType = "icrc85:ovs:shareaction:icrc75"; params = Blob.fromArray([]);}));
+      state.icrc85.nextCycleActionId := ?result.id;
+    };
+
+    private func handleIcrc85Action<system>(id: TT.ActionId, action: TT.Action) : async* Star.Star<TT.ActionId, TT.Error>{
+
+      D.print("in handle timer async " # debug_show((id,action)));
+      switch(action.actionType){
+        case("icrc85:ovs:shareaction:icrc75"){
+          await* shareCycles<system>();
+          #awaited(id);
+        };
+        case(_) #trappable(id);
+      };
+    };
+
+    private func shareCycles<system>() : async*(){
+
+      let lastReportId = switch(state.icrc85.lastActionReported){
+        case(?val) val;
+        case(null) 0;
+      };
+
+      let actions = if(state.icrc85.activeActions > 0){
+        state.icrc85.activeActions;
+      } else {1;};
+
+      var cyclesToShare = 1_000_000_000_000; //1 XDR
+
+      if(actions > 0){
+        let additional = Nat.div(actions, 10000);
+        cyclesToShare := cyclesToShare + (additional * 1_000_000_000_000);
+        if(cyclesToShare > 100_000_000_000_000) cyclesToShare := 100_000_000_000_000;
+      };
+
+      try{
+        await* ovsfixed.shareCycles<system>({
+          environment = do?{environment.advanced!.icrc85};
+          namespace = "org.icdevs.libraries.icrc75";
+          actions = 1;
+          schedule = func <system>(period: Nat) : async* (){
+            let result = tt().setActionSync<system>(get_time() + period, {actionType = "icrc85:ovs:shareaction:icrc75"; params = Blob.fromArray([]);});
+            state.icrc85.nextCycleActionId := ?result.id;
+          };
+          cycles = Cycles.balance();
+        });
+      } catch(e){
+        debug if (debug_channel.announce) D.print("error sharing cycles" # Error.message(e));
+      };
+
+    };
+
+    private var tt_ : ?TT.TimerTool = null;
+
+    private func tt<system>() : TT.TimerTool {
+      switch(tt_){
+        case(?val) val;
+        case(null){
+          
+          let foundClass = switch(environment.tt){
+            case(?val){
+              tt_ := ?val;
+              val;
+            };
+            case(null){
+              //todo: recover from existing state?
+              let timerState = TT.init(TT.initialState(),#v0_1_0(#id), null, canister);
+              state.tt := ?timerState;
+
+              let x = TT.TimerTool(?timerState, canister, {
+                advanced = switch(environment.advanced){
+                  case(?val) {?{
+                      icrc85 = ?val.icrc85
+                    };
+                  };
+                  case(null) null;
+                };
+                reportError = null;
+                reportExecution = null;
+              });
+              tt_ := ?x;
+              x;
+            };
+          };
+          
+
+          foundClass.registerExecutionListenerAsync(?"icrc85:ovs:shareaction:icrc75", handleIcrc85Action : TT.ExecutionAsyncHandler);
+          ignore Timer.setTimer<system>(#nanoseconds(OneDay), scheduleCycleShare);
+          foundClass;
+        };
+      };
+    };
+
   };
 };

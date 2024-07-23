@@ -191,6 +191,17 @@ type Permission = {
 
 For more details on the ICRC-75 standard, refer to the [ICRC-75 Standard Document](https://github.com/dfinity/ICRC/issues/75).
 
+
+## OVS Default Behavior
+
+This motoko class has a default OVS behavior that sends cycles to the developer to provide funding for maintenance and continued development. In accordance with the OVS specification and ICRC85, this behavior may be overridden by another OVS sharing heuristic or turned off. We encourage all users to implement some form of OVS sharing as it helps us provide quality software and support to the community.
+
+Default behavior: 1 XDR per month for up to 10,000 actions;  1 additional XDR per month for each additional 10,000 actions. Max of 10 XDR per month per canister.
+
+Default Beneficiary: ICDevs.org
+
+Additional Behavior: Utilizes the timerTool by Pan Industrial: https://github.com/PanIndustrial-Org/timerTool
+
 ## Contributing
 
 We welcome contributions to improve the ICRC-75 implementation. Please submit issues and pull requests via GitHub.
