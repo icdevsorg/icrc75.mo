@@ -16,7 +16,7 @@ import List "mo:base/List";
 import Account "mo:icrc1-mo/ICRC1/Account";
 import Timer "mo:base/Timer";
 
-import TT "../../timerTool/src/";
+import TT "mo:timer-tool";
 import ovsfixed "mo:ovs-fixed";
 import Star "mo:star/star";
 

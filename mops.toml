@@ -20,5 +20,5 @@ fuzz = "0.2.1"
 name = "icrc75-mo"
 version = "0.0.1"
 description = "icrc75 for motoko"
-repository = "https://github.com/PanIndustrial-Org/icrc75.mo"
+repository = "https://github.com/icdevsorg/icrc75.mo"
 keywords = [ "icrc75", "lists", "rbac" ]
