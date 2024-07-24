@@ -39,14 +39,7 @@ The ICRC-75 standard provides a framework for creating and managing identity lis
 
 1. Clone the repository:
    ```bash
-   git clone https://github.com/yourusername/icrc75.mo.git
-   cd icrc75.mo
-   ```
-
-2. Install dependencies:
-   ```bash
-   dfx start --background
-   dfx deploy
+   mops add icrc75-mo
    ```
 
 ## Usage
