@@ -184,7 +184,7 @@ module {
     /// ## Example
     ///
     /// ```
-    /// let currentState = myICRC4Instance.get_state();
+    /// let currentState = myICRC75Instance.get_state();
     /// ```
     public func get_state() :  CurrentState {
       return state;
@@ -193,7 +193,7 @@ module {
   
     /// `metadata`
     ///
-    /// Retrieves all metadata associated with the token ledger relative to icrc4
+    /// Retrieves all metadata associated with the token ledger relative to icrc75
     /// If no metadata is found, the method initializes default metadata based on the state and the canister Principal.
     ///
     /// Returns:
@@ -314,7 +314,7 @@ module {
     /// ## Example
     ///
     /// ```
-    /// let statistics = myICRC4Instance.get_stats();
+    /// let statistics = myICRC75Instance.get_stats();
     /// ```
     public func get_stats() : Stats {
       return {

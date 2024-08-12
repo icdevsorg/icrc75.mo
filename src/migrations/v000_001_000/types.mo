@@ -34,7 +34,7 @@ import BTreeLib "mo:stableheapbtreemap/BTree";
 import ICRC16Lib "mo:candy/types";
 import ICRC16ConversionLib "mo:candy/conversion";
 import Account "mo:icrc1-mo/ICRC1/Account";
-import TT "../../../../timerTool/src/";
+import TT "mo:timer-tool";
 
 module {
 
@@ -758,6 +758,7 @@ module {
     /// Reference to the ICRC-1 ledger interface.
     advanced : ?{
       icrc85 : ICRC85Options;
+      
     };
     tt : ?TT.TimerTool;
     addRecord: ?(<system>(Value, ?Value) -> Nat);
@@ -769,7 +770,7 @@ module {
 
 
 
-  /// InitArgs represents the initialization arguments for setting up an ICRC1 token canister that includes ICRC4 standards.
+  /// InitArgs represents the initialization arguments for setting up an ICRC75 token canister
   public type InitArgs = ?{
       existingNamespaces : ?[NamespaceRecordShared];
   };
