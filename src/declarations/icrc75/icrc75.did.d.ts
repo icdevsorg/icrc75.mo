@@ -133,7 +133,7 @@ export type ManageListMembershipResult = [] | [
   { 'Ok' : TransactionID } |
     { 'Err' : ManageListMembershipError }
 ];
-export type ManageListPropertiesRequest = Array<ManageListPropertyRequestItem>;
+export type ManageListPropertyRequest = Array<ManageListPropertyRequestItem>;
 export type ManageListPropertyError = { 'IllegalAdmin' : null } |
   { 'IllegalPermission' : null } |
   { 'NotFound' : null } |
@@ -258,7 +258,7 @@ export interface Token {
   >,
   'icrc_75_metadata' : ActorMethod<[], DataItemMap__1>,
   'manage_list_properties' : ActorMethod<
-    [ManageListPropertiesRequest],
+    [ManageListPropertyRequest],
     ManageListPropertyResponse
   >,
 }

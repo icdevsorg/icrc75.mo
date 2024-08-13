@@ -99,7 +99,7 @@ shared ({ caller = _owner }) actor class Token  (
   public type ManageListMembershipRequest = Service.ManageListMembershipRequest;
   public type ManageListMembershipRequestItem = Service.ManageListMembershipRequestItem;
   public type ManageListMembershipAction = Service.ManageListMembershipAction;
-  public type ManageListPropertiesRequest = Service.ManageListPropertiesRequest;
+  public type ManageListPropertyRequest = Service.ManageListPropertyRequest;
   public type ManageListMembershipResponse = Service.ManageListMembershipResponse;
   public type ManageListPropertyRequestItem = Service.ManageListPropertyRequestItem;
   public type ManageListPropertyResponse = Service.ManageListPropertyResponse;
@@ -126,7 +126,7 @@ shared ({ caller = _owner }) actor class Token  (
     return await* icrc75().manage_list_membership(msg.caller, request, null);
   };
 
-  public shared(msg) func manage_list_properties(request: ManageListPropertiesRequest) : async ManageListPropertyResponse {
+  public shared(msg) func manage_list_properties(request: ManageListPropertyRequest) : async ManageListPropertyResponse {
     return await* icrc75().manage_list_properties(msg.caller, request, null);
   };
 

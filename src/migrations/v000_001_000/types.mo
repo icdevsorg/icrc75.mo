@@ -226,11 +226,12 @@ module {
 
   public type ManageListMembershipRequest = [ManageListMembershipRequestItem];
 
-  public type ManageListPropertiesRequest = [ManageListPropertyRequestItem];
+  public type ManageListPropertyRequest = [ManageListPropertyRequestItem];
 
   public type ManageListMembershipError = {
     #Unauthorized;
     #NotFound;
+    #Exists;
     #Other : Text;
   };
 

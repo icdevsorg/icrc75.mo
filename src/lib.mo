@@ -28,11 +28,7 @@ import Service "./service";
 
 module {
 
-  let debug_channel = {
-    announce = false;
-    transfer = true;
-    approve = true;
-  };
+
 
   ///MARK: Migration Types
   /// # State
@@ -91,10 +87,11 @@ module {
 
   public type NamespaceRecord = MigrationTypes.Current.NamespaceRecord;
 
-  public type ManageListPropertiesRequest = MigrationTypes.Current.ManageListPropertiesRequest;
+  public type ManageListPropertyRequest = MigrationTypes.Current.ManageListPropertyRequest;
   public type ManageListPropertyResponse = MigrationTypes.Current.ManageListPropertyResponse;
   public type ManageListPropertyResult = MigrationTypes.Current.ManageListPropertyResult;
   public type ManageListPropertyError = MigrationTypes.Current.ManageListPropertyError;
+
 
 
 
@@ -145,6 +142,17 @@ module {
   ///     - environment: `Environment` - The environment settings for various ICRC standards-related configurations.
   /// - Returns: No explicit return value as this is a class constructor function.
   public class ICRC75(stored: ?State, canister: Principal, environment: Environment){
+
+    let debug_channel= {
+      announce = true;
+      queryItem = true;
+      managemember = true;
+      managelist = true
+    };
+
+    debug if(debug_channel.announce) {
+      D.print(debug_show(("ICRC75 initializing", canister)));
+    };
 
     /// # State
     ///
@@ -259,6 +267,33 @@ module {
 
     ///MARK: actor mangement
 
+    var _haveTimer = ?false;
+
+    private func ensureTT<system>(){
+      let haveTimer = switch(_haveTimer){
+        case(?val) val;
+        case(null){
+           let result = (switch(environment.advanced){
+                case(?val) {
+                  switch(val.icrc85.kill_switch){
+                    
+                        case(null) true;
+                        case(?val) val;
+                     
+                  };
+                };
+                case(null) true;
+              });
+          _haveTimer := ?result;
+          result;
+        };
+      };
+      
+      if(haveTimer){
+        ignore tt<system>();
+      };
+    };
+
     /// Updates actor information such as transaction and query variables.
     /// - Parameters:
     ///     - request: `[UpdateLedgerInfoRequest]` - A list of requests containing the updates to be applied to the ledger.
@@ -266,7 +301,7 @@ module {
     public func updateProperties<system>(caller : Principal, request: ManageRequest) : ManageResponse{
 
       //make sure tt is set
-      ignore tt<system>();
+      ignore ensureTT<system>();
       state.icrc85.activeActions := state.icrc85.activeActions + 1;
 
       if(state.owner != caller){
@@ -344,11 +379,37 @@ module {
       return #Array(Vector.toArray(vec));
     };
 
+    private func fileMember(member : MigrationTypes.Current.ListItem, record: NamespaceRecord) : () {
+      Set.add(record.members, listItemHash, member);
+      let found = switch(Map.get(state.memberIndex, listItemHash, member)){
+          case(?val) val;
+          case(null){
+            let newSet = Set.new<Text>();
+            ignore Map.put(state.memberIndex, listItemHash, member, newSet);
+            newSet;
+          };
+        };
+      Set.add(found, Set.thash, record.namespace);
+      
+    };
+
+    private func removeMember(member : MigrationTypes.Current.ListItem, record: NamespaceRecord) : () {
+      Set.delete(record.members, listItemHash, member);
+      let found = switch(Map.get(state.memberIndex, listItemHash, member)){
+          case(?val) val;
+          case(null) return;
+        };
+      Set.delete(found, Set.thash, record.namespace);
+    };
+
+
     ///MARK: ICRC75 UPDATE
+
+  
 
     public func manage_list_membership(caller: Principal, request: ManageListMembershipRequest, canChange: CanChangeMembership) : async* ManageListMembershipResponse {
 
-      ignore tt<system>();
+      ignore ensureTT<system>();
       state.icrc85.activeActions := state.icrc85.activeActions + 1;
 
       //check permissions
@@ -388,6 +449,27 @@ module {
           };
         };
 
+        let (val, actionText) =switch(thisItem.action){
+          case(#Add(val)){
+             (val,"add");
+          };
+          case(#Remove(val)){
+            (val,"remove");
+          };
+        };
+
+        if(actionText == "add"){
+          if(Set.has(foundCache.members, listItemHash, val)){
+            results.add(?#Err(#Exists));
+            continue proc;
+          };
+        } else {
+          if(Set.has(foundCache.members, listItemHash, val) ==false){
+            results.add(?#Err(#NotFound));
+            continue proc;
+          };
+        };
+
         let trxTop = Buffer.Buffer<(Text, Value)>(1);
         trxTop.add(("btype", #Text("memChange")));
         if(thisItem.created_at_time == null){
@@ -413,14 +495,7 @@ module {
         
   
 
-        let (val, actionText) =switch(thisItem.action){
-          case(#Add(val)){
-             (val,"add");
-          };
-          case(#Remove(val)){
-            (val,"remove");
-          };
-        };
+        
 
         switch(val){
           case(#DataItem(di)){
@@ -482,8 +557,9 @@ module {
         };
 
         if(actionText == "add"){
-          Set.add(foundCache.members, listItemHash, val);
+          fileMember(val, foundCache);
         } else {
+          removeMember(val, foundCache);
           ignore Set.remove(foundCache.members, listItemHash, val);
         };
 
@@ -508,9 +584,9 @@ module {
       return Buffer.toArray(results);
     };
 
-    public func manage_list_properties(caller: Principal, request: ManageListPropertiesRequest, canChange: CanChangeProperty) : async* ManageListPropertyResponse {
+    public func manage_list_properties(caller: Principal, request: ManageListPropertyRequest, canChange: CanChangeProperty) : async* ManageListPropertyResponse {
 
-      ignore tt<system>();
+      ignore ensureTT<system>();
       state.icrc85.activeActions := state.icrc85.activeActions + 1;
 
       //check permissions
@@ -1266,6 +1342,65 @@ module {
       return false;
     };
 
+    public func listChain(caller: Principal, list : Text, depth: Nat) : Set.Set<Text>{
+      debug if(debug_channel.announce) {
+        D.print(debug_show(("ListChain", list, depth)));
+      };
+      if(depth > 10){
+        return Set.new<Text>();
+      };
+
+      let result = Set.new<Text>();
+
+      let ?record = Map.get(state.memberIndex, listItemHash, #List(list)) else  return Set.new<Text>();
+
+      label search for(thisItem in Set.keys(record)){
+
+        switch(BTree.get(state.namespaceStore, Text.compare, thisItem)){
+          case(?record){
+            debug if(debug_channel.queryItem) D.print(debug_show(("Found record", record)));
+            //check permissions
+            if(Set.has<ListItem>(record.permissions.admin, listItemHash, #Identity(caller)) == false){
+              if(Set.has<ListItem>(record.permissions.read, listItemHash, #Identity(caller)) == false){
+                if(findIdentityInCollectionList(caller, record.permissions.admin) == false){
+                  if(findIdentityInCollectionList(caller, record.permissions.read) == false){
+                    continue search;
+                  };
+                };
+              };
+            };
+          };
+          case(null){
+            debug if(debug_channel.queryItem) D.print(debug_show(("Not found record", thisItem)));
+            continue search;
+          };
+        };
+      };
+
+      debug if(debug_channel.announce) {
+        D.print(debug_show(("ListChain has member index", record)));
+      };
+
+      label proc for(thisItem in Set.keys(record)){
+        if(Set.has(result, Set.thash, thisItem)){
+          debug if(debug_channel.announce) {
+            D.print(debug_show(("ListChain has member continuing ", thisItem)));
+          };
+          continue proc;
+        };
+        Set.add(result, Set.thash, thisItem);
+        for(thisSub in Set.keys(listChain(caller, thisItem, depth + 1)))
+        {
+          debug if(debug_channel.announce) {
+            D.print(debug_show(("ListChain has member adding ", thisSub)));
+          };
+          Set.add(result, Set.thash, thisSub );
+        };
+      };
+
+      return result;
+    };
+
     public func findListInList(namespace : List, list : Text) : Bool{
       return findListInListDepth(namespace, list, 0);
     };
@@ -1560,6 +1695,7 @@ module {
     };
 
     public func member_of(caller: Principal, listItem: ListItem, prev: ?List, take : ?Nat) : [List]{
+      debug if(debug_channel.announce) D.print(debug_show(("Member of", listItem)));
       let results = Buffer.Buffer<List>(1);
 
       var maxTake = switch(take){
@@ -1578,13 +1714,19 @@ module {
 
       let foundIndex = switch(Map.get(state.memberIndex, listItemHash, listItem)){
         case(?val) val;
-        case(null) return [];
+        case(null) {
+          debug if(debug_channel.queryItem) D.print(debug_show(("no idex found in ", state.memberIndex)));
+          return [];
+        };
       };
+
+      debug if(debug_channel.queryItem) D.print(debug_show(("Found index", foundIndex)));
 
       label search for(thisItem in Set.keys(foundIndex)){
 
         switch(BTree.get(state.namespaceStore, Text.compare, thisItem)){
           case(?record){
+            debug if(debug_channel.queryItem) D.print(debug_show(("Found record", record)));
             //check permissions
             if(Set.has<ListItem>(record.permissions.admin, listItemHash, #Identity(caller)) == false){
               if(Set.has<ListItem>(record.permissions.read, listItemHash, #Identity(caller)) == false){
@@ -1597,6 +1739,7 @@ module {
             };
           };
           case(null){
+            debug if(debug_channel.queryItem) D.print(debug_show(("Not found record", thisItem)));
             continue search;
           };
         };
@@ -1605,78 +1748,89 @@ module {
           switch(prev){
             case(?prev){
               if(prev == thisItem){
+                debug if(debug_channel.queryItem) D.print(debug_show(("Found prev", prev)));
                 bFound := true;
               };
             };
             case(null){};
           };
         } else {
+          debug if(debug_channel.queryItem) D.print(debug_show(("Adding record", thisItem)));
           results.add(thisItem);
           if(results.size() == maxTake){
+            debug if(debug_channel.queryItem) D.print(debug_show(("Breaking size", results.size())));
             break search;
           };
+        };
+      };
+
+      debug if(debug_channel.queryItem) D.print(debug_show(("Results before sub list", Buffer.toArray(results))));
+
+      for(thisItem in results.vals()){
+        debug if(debug_channel.queryItem) D.print(debug_show(("Checking sub list", thisItem)));
+        //are these lists a member of any other lists
+        for(thisSub in Set.keys(listChain(caller, thisItem, 0))){
+          debug if(debug_channel.queryItem) D.print(debug_show(("Adding sub list", thisSub)));
+          results.add(thisSub);
         };
       };
 
       return Buffer.toArray(results);
     };
 
+   
+
     public func is_member(caller: Principal, request : [AuthorizedRequestItem]) : [Bool]{
+      debug if(debug_channel.announce) D.print(debug_show(("Is member", request)));
       let results = Buffer.Buffer<Bool>(1);
 
       label proc for(thisItem in request.vals()){
+        debug if(debug_channel.queryItem) D.print(debug_show(("Processing item", thisItem)));
 
         //get the lists this item is on
         let foundSet = switch(Map.get(state.memberIndex, listItemHash, thisItem.0)){
           case(?val) val;
           case(null) {
+            debug if(debug_channel.queryItem) D.print(debug_show(("Not found", thisItem.0)));
             results.add(false);
             continue proc;
           }
         };
 
+        let foundLists = Set.fromIter(Set.keys(foundSet), Set.thash);
+
+        for(thisList in Set.keys(foundSet)){
+          for(thisSub in Set.keys(listChain(caller, thisList, 0))){
+            Set.add(foundLists, Set.thash, thisSub);
+          };
+        };
+
+        //let foundSet = listChain(caller, thisItem.0, 0);
+
         //check the binary check
         label ands for(thisCheck in thisItem.1.vals()){
+          debug if(debug_channel.queryItem) D.print(debug_show(("Processing check ands ", thisCheck)));
           //top levels are anded together
           label ors for(thisOr in thisCheck.vals()){
+            debug if(debug_channel.queryItem) D.print(debug_show(("Processing check ors ", thisOr)));
             //or levels are or'd together
-            if(Set.has(foundSet, Set.thash, thisOr)){
-              continue ors;
-            } else {
-
-              //test
-              for(thisItem in Set.keys(foundSet)){
-                if(findListInList(thisOr, thisItem)){
-                  continue ors;
-                };
-              };
-
-              /*
-              //look in list of lists
-              switch(Map.get(state.memberIndex, listItemHash, #List(thisOr))){
-                case(?val){
-                  for(thisListItem in Set.keys(val)){
-                    if(Set.has(foundSet, Set.thash, thisListItem)){
-                      continue ors;
-                    }
-                  };
-                };
-                case(null){};
-              };
-            };
-            */
+            if(Set.has(foundLists, Set.thash, thisOr)){
+              debug if(debug_channel.queryItem) D.print(debug_show(("Found", thisOr)));
+              continue ands;
             };
 
-            //if we get here, we didn't find it and our and will fail
+            //if we get here, we didn't find it and our or and will fail
+            debug if(debug_channel.queryItem) D.print(debug_show(("Failed", thisOr)));
             results.add(false);
-            break ands;
+            continue proc;
           };
-          //if we get here then all the ors passed and we can add a true
-          results.add(true);
         };
+        //if we get here then all the ors passed and we can add a true
+        debug if(debug_channel.queryItem) D.print(debug_show(("Passed", thisItem)));
+        results.add(true);
       };
       
-
+      debug if(debug_channel.queryItem) D.print(debug_show(("Results", Buffer.toArray(results))));
       return Buffer.toArray(results);
     };
 
@@ -1956,19 +2110,23 @@ module {
               let timerState = TT.init(TT.initialState(),#v0_1_0(#id), null, canister);
               state.tt := ?timerState;
 
-              let x = TT.TimerTool(?timerState, canister, {
-                advanced = switch(environment.advanced){
-                  case(?val) {?{
-                      icrc85 = ?val.icrc85
+              
+
+       
+                let x = TT.TimerTool(?timerState, canister, {
+                  advanced = switch(environment.advanced){
+                    case(?val) {?{
+                        icrc85 = ?val.icrc85
+                      };
                     };
+                    case(null) null;
                   };
-                  case(null) null;
-                };
-                reportError = null;
-                reportExecution = null;
-              });
-              tt_ := ?x;
-              x;
+                  reportError = null;
+                  reportExecution = null;
+                });
+                tt_ := ?x;
+                x;
+      
             };
           };
           

@@ -107,6 +107,7 @@ module {
   public type ManageListMembershipError = {
     #Unauthorized;
     #NotFound;
+    #Exists;
     #Other : Text;
   };
 
@@ -191,7 +192,7 @@ module {
     #Remove : ListItem;
   };
 
-  public type ManageListPropertiesRequest = [ManageListPropertyRequestItem];
+  public type ManageListPropertyRequest = [ManageListPropertyRequestItem];
 
   public type ManageListPropertyRequestItem = {
     list : List;
@@ -216,7 +217,7 @@ module {
     icrc75_metadata: () -> async DataItemMap;
     icrc75_manage : (ManageRequest) -> async ManageResult;
     icrc75_manage_list_membership : (ManageListMembershipRequest) -> async ManageListMembershipResponse;
-    icrc75_manage_list_properties : (ManageListPropertiesRequest) -> async ManageListPropertyResponse;
+    icrc75_manage_list_properties : (ManageListPropertyRequest) -> async ManageListPropertyResponse;
     icrc75_get_lists : query (?Text, Bool, ?List, ?Nat) ->  async [ListRecord];
     icrc75_get_list_members_admin : query (List, ?ListItem, ?Nat) ->  async [ListItem];
     icrc75_get_list_permissions_admin : query (List,  ?Permission, ?PermissionListItem, ?Nat) ->  async PermissionList;

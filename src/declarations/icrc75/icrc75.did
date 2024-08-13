@@ -17,7 +17,7 @@ type Token =
    icrc_75_member_of: (ListItem__2, opt List__2, opt nat) ->
     (vec List__2) query;
    icrc_75_metadata: () -> (DataItemMap__1) query;
-   manage_list_properties: (ManageListPropertiesRequest) ->
+   manage_list_properties: (ManageListPropertyRequest) ->
     (ManageListPropertyResponse);
  };
 type Subaccount__1 = blob;
@@ -155,7 +155,7 @@ type ManageListPropertyError =
    Other: text;
    Unauthorized;
  };
-type ManageListPropertiesRequest = vec ManageListPropertyRequestItem;
+type ManageListPropertyRequest = vec ManageListPropertyRequestItem;
 type ManageListMembershipResult = 
  opt variant {
        Err: ManageListMembershipError;

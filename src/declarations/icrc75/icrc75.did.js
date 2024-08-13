@@ -240,7 +240,7 @@ export const idlFactory = ({ IDL }) => {
     'from_subaccount' : IDL.Opt(Subaccount__1),
     'created_at_time' : IDL.Opt(IDL.Nat),
   });
-  const ManageListPropertiesRequest = IDL.Vec(ManageListPropertyRequestItem);
+  const ManageListPropertyRequest = IDL.Vec(ManageListPropertyRequestItem);
   const ManageListPropertyError = IDL.Variant({
     'IllegalAdmin' : IDL.Null,
     'IllegalPermission' : IDL.Null,
@@ -298,7 +298,7 @@ export const idlFactory = ({ IDL }) => {
       ),
     'icrc_75_metadata' : IDL.Func([], [DataItemMap__1], ['query']),
     'manage_list_properties' : IDL.Func(
-        [ManageListPropertiesRequest],
+        [ManageListPropertyRequest],
         [ManageListPropertyResponse],
         [],
       ),
