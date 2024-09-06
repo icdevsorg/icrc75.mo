@@ -2123,6 +2123,8 @@ module {
                   };
                   reportError = null;
                   reportExecution = null;
+                  syncUnsafe = null;
+                  reportBatch = null;
                 });
                 tt_ := ?x;
                 x;
