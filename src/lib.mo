@@ -2107,7 +2107,11 @@ module {
             };
             case(null){
               //todo: recover from existing state?
-              let timerState = TT.init(TT.initialState(),#v0_1_0(#id), null, canister);
+              let timerState = switch(state.tt){
+                case(null) TT.init(TT.initialState(),#v0_1_0(#id), null, canister);
+                case(?val) TT.init(val,#v0_1_0(#id), null, canister);
+              };
+              
               state.tt := ?timerState;
 
               
