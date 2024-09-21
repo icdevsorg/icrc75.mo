@@ -174,48 +174,38 @@ type ManageListPropertyResult = ?(variant {
 });
 ```
 
-### Canister Management
-
-```candid
-type ManageRequestItem = variant { 
-  UpdateDefaultTake = nat;
-  UpdateMaxTake = nat;
-  UpdatePermittedDrift = nat;
-  UpdateTxWindow = nat;
-  UpdateOwner = principal;
-};
-
-type ManageResult = ?(variant {
-  Ok: TransactionID
-  Err: Error;
-});
-
-```
-
-
 ### Data Structure for Identity Tokens
 
 Identity tokens within the ICRC-75 standard play a crucial role as cryptographic proofs of membership for entities and data items listed within any given list. These tokens enable identities to establish their association rights with respect to various resources or services managed on the Internet Computer.
 
+#### Expiration of Tokens
+
+By default tokens are issued without expiration.  To enable expiration add a record to the list metadata with a key of icrc75:maxValidNS with a value of #Nat(nanoseconds valid).  
+
 #### Definition
 
 ```candid
-type IdentityToken = record {
-    authority: Principal;      // Principal of the canister issuing the token.
-    namespace: Text;      // The list namespace to which the token pertains.
-    issued: Nat;          // Timestamp of when the token was issued.
-    expires: Nat;         // Timestamp of when the token expires.
-    member: ListItem;         // Principal of the user to whom the token is issued.
-    nonce: Nat;           // A unique nonce to ensure the freshness of the token.
+type IdentityToken = Value; // #Map([{certificateItems}]);
+
+// record {
+//    authority: Blob(Principal);      // Principal of the canister issuing the token.
+//    namespace: Text;      // The list namespace to which the token pertains.
+//    issued: Nat;          // Timestamp of when the token was issued.
+//    expires?: Nat;         // Timestamp of when the token expires.
+//    identity?: Blob(Principal);         // Principal of the user to whom the token is issued.
+//    dataItem?: Value
+//    account?: Array([Blob(Principal, ?Blob(subaccmount))]);
+//    listItem?: Text;
+//    nonce: Nat;           // A unique nonce to ensure the freshness of the token.
 };
 
 type IdentityCertificate = record {
-    token: IdentityToken;      
-    witness: Witness;      
+    token: IdentityToken;     
+    witness: Blob;      
     certificate: Blob;      
 };
 
-  /// The type of witnesses. This correponds to the `HashTree` in the Interface
+  /// The type of witnesses. This corresponds to the `HashTree` in the Interface
   /// Specification of the Internet Computer
   type Witness = variant {
     #empty;
@@ -224,6 +214,17 @@ type IdentityCertificate = record {
     #labeled : (Blob, Witness);
     #leaf : Blob;
   };
+
+  type IdentityRequestResult = variant {
+    #Ok: IdentityToken;
+    #Err: IdentityRequestError = variant {
+      NotFound;
+      NotAMember;
+      ExpirationError;
+      Other : Text;
+    };
+  };
+
 ```
 
 
@@ -282,15 +283,6 @@ Functions within the ICRC-75 standard are categorized into specific groups based
 #### Manage List Update Functions
 
 These functions enable the dynamic management and update of lists according to specified criteria by authorized users. They facilitate the central administration tasks involved in the identity list structure.
-
-##### icrc_75_manage
-
-This function provides a generalized interface for managing various properties and behaviors within lists. Administrators can invoke this function to submit batches of management requests, which could range from adding new identities to adjusting configuration settings for the list.
-
-```candid
-// Add or remove identities and sublists in a list
-icrc_75_manage: (vec ManageRequest) -> async vec ManageResult;
-```
 
 ##### icrc_75_manage_list_membership
 
@@ -394,7 +386,7 @@ Initiates a request for a membership token, representing an asynchronous operati
 
 ```candid
 // Request a membership token for a list
-icrc_75_request_token: (item: ListItem, list: List) -> async bool;
+icrc_75_request_token: (item: ListItem, list: List, expirationNS: ?Nat) -> async IdentityRequestResult;
 ```
 
 ##### icrc_75_retrieve_token
@@ -403,7 +395,7 @@ Retrieves a previously requested membership token, providing a crucial link in e
 
 ```candid
 // Retrieve a prepared membership token for a list
-icrc_75_retrieve_token: (item: ListItem, list: List) -> query async IdentityCertificate;
+icrc_75_retrieve_token: (token: IdentityToken) -> query async IdentityCertificate;
 ```
 
 ### icrc10_supported_standards
@@ -418,7 +410,7 @@ record { name = "ICRC-10"; url = "https://github.com/dfinity/ICRC/ICRCs/ICRC-10"
 ```
 
 
-## Generic ICRC-7 Block Schema
+## Generic ICRC-75 Block Schema
 
 An ICRC-75 block is defined as follows:
 1. its `btype` field MUST be set to the op name that starts with `75`
@@ -468,7 +460,8 @@ The block schemas for ICRC-75 are designed to record and track changes relating 
 1. **`btype` field**: MUST be set to `"75permChange"`
 2. **`tx` field**:
    1. MUST contain a field `list: Text` for the list where permissions are altered.
-   2. MUST contain a field `targetIdentity: Identity- blob` for whose permissions have changed.
+   2. MAY contain a field `targetIdentity: Identity- blob` for whose permissions have changed.
+   3. MAY contain a field `targetList: List- text` for whose permissions have changed.
    3. MUST contain a field `newPermissions: Text` detailing the new permission set.
    4. MUST contain a field `previousPermissions: Text` showing previous permissions.
    5. MUST contain a field `changer: Identity - blob` identifying who made the changes.
@@ -498,11 +491,10 @@ Please reference [ICRC-7](https://github.com/dfinity/ICRC/blob/main/ICRCs/ICRC-7
 
 
 //todo:
-
+- add metadata like max take, default take, max query, max update
 - Add Errors when they are final
 - icrc_75_get_list_permissions_admin : query (List, ?Permission, ?PermissionListItem, ?Nat) ->  async PermissionList;
   public type PermissionList = [PermissionListItem];
-
   public type PermissionListItem = (Permission, ListItem);
 
 <!--

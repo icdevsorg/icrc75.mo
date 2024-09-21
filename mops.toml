@@ -9,6 +9,8 @@ candy = "0.3.0"
 stableheapbtreemap = "1.5.0"
 ovs-fixed = "0.1.2"
 timer-tool = "0.0.3"
+ic-certification = "0.1.3"
+rep-indy-hash = "0.1.1"
 
 [dev-dependencies]
 test = "2.0.0"

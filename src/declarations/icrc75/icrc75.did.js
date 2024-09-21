@@ -1,6 +1,8 @@
 export const idlFactory = ({ IDL }) => {
   const CandyShared = IDL.Rec();
   const DataItem__1 = IDL.Rec();
+  const Value = IDL.Rec();
+  const ValueShared = IDL.Rec();
   const Permission = IDL.Variant({
     'Read' : IDL.Null,
     'Write' : IDL.Null,
@@ -83,7 +85,8 @@ export const idlFactory = ({ IDL }) => {
   });
   const PermissionListItem = IDL.Tuple(Permission, ListItem);
   const PermissionList = IDL.Vec(PermissionListItem);
-  const ICRC16Map = IDL.Vec(IDL.Tuple(IDL.Text, DataItem));
+  const ICRC16MapItem = IDL.Tuple(IDL.Text, DataItem);
+  const ICRC16Map = IDL.Vec(ICRC16MapItem);
   const NamespaceRecordShared = IDL.Record({
     'permissions' : PermissionList,
     'members' : IDL.Vec(ListItem),
@@ -93,10 +96,31 @@ export const idlFactory = ({ IDL }) => {
   const InitArgs = IDL.Opt(
     IDL.Record({
       'existingNamespaces' : IDL.Opt(IDL.Vec(NamespaceRecordShared)),
+      'cycleShareTimerID' : IDL.Opt(IDL.Nat),
+      'certificateNonce' : IDL.Opt(IDL.Nat),
     })
   );
-  const List__2 = IDL.Text;
-  const ListItem__2 = IDL.Variant({
+  ValueShared.fill(
+    IDL.Variant({
+      'Int' : IDL.Int,
+      'Map' : IDL.Vec(IDL.Tuple(IDL.Text, ValueShared)),
+      'Nat' : IDL.Nat,
+      'Blob' : IDL.Vec(IDL.Nat8),
+      'Text' : IDL.Text,
+      'Array' : IDL.Vec(ValueShared),
+    })
+  );
+  const Value__1 = IDL.Variant({
+    'Int' : IDL.Int,
+    'Map' : IDL.Vec(IDL.Tuple(IDL.Text, ValueShared)),
+    'Nat' : IDL.Nat,
+    'Blob' : IDL.Vec(IDL.Nat8),
+    'Text' : IDL.Text,
+    'Array' : IDL.Vec(ValueShared),
+  });
+  const ICRC10Record = IDL.Record({ 'url' : IDL.Text, 'name' : IDL.Text });
+  const List__1 = IDL.Text;
+  const ListItem__1 = IDL.Variant({
     'List' : List,
     'DataItem' : DataItem,
     'Account' : Account,
@@ -114,8 +138,8 @@ export const idlFactory = ({ IDL }) => {
     'Admin' : IDL.Null,
     'Permissions' : IDL.Null,
   });
-  const List__1 = IDL.Text;
-  const DataItemMap = IDL.Vec(IDL.Tuple(IDL.Text, DataItem__1));
+  const List__2 = IDL.Text;
+  const DataItemMap__1 = IDL.Vec(IDL.Tuple(IDL.Text, DataItem__1));
   const PropertyShared__1 = IDL.Record({
     'value' : DataItem__1,
     'name' : IDL.Text,
@@ -124,7 +148,7 @@ export const idlFactory = ({ IDL }) => {
   DataItem__1.fill(
     IDL.Variant({
       'Int' : IDL.Int,
-      'Map' : DataItemMap,
+      'Map' : DataItemMap__1,
       'Nat' : IDL.Nat,
       'Set' : IDL.Vec(DataItem__1),
       'Nat16' : IDL.Nat16,
@@ -156,22 +180,54 @@ export const idlFactory = ({ IDL }) => {
     'subaccount' : IDL.Opt(Subaccount__1),
   });
   const Identity__1 = IDL.Principal;
-  const ListItem__1 = IDL.Variant({
-    'List' : List__1,
+  const ListItem__2 = IDL.Variant({
+    'List' : List__2,
     'DataItem' : DataItem__1,
     'Account' : Account__1,
     'Identity' : Identity__1,
   });
-  const PermissionListItem__1 = IDL.Tuple(Permission__2, ListItem__1);
-  const PermissionListItem__2 = IDL.Tuple(Permission__2, ListItem__1);
+  const PermissionListItem__1 = IDL.Tuple(Permission__2, ListItem__2);
+  const PermissionListItem__2 = IDL.Tuple(Permission__2, ListItem__2);
   const PermissionList__1 = IDL.Vec(PermissionListItem__2);
   const ListRecord = IDL.Record({
-    'metadata' : IDL.Opt(DataItemMap),
-    'list' : List__1,
+    'metadata' : IDL.Opt(DataItemMap__1),
+    'list' : List__2,
+  });
+  const Time = IDL.Nat;
+  const ActionId = IDL.Record({ 'id' : IDL.Nat, 'time' : Time });
+  const Action = IDL.Record({
+    'aSync' : IDL.Opt(IDL.Nat),
+    'actionType' : IDL.Text,
+    'params' : IDL.Vec(IDL.Nat8),
+    'retries' : IDL.Nat,
+  });
+  const ActionDetail = IDL.Tuple(ActionId, Action);
+  const TimerId = IDL.Nat;
+  const Stats__1 = IDL.Record({
+    'timers' : IDL.Nat,
+    'maxExecutions' : IDL.Nat,
+    'minAction' : IDL.Opt(ActionDetail),
+    'cycles' : IDL.Nat,
+    'nextActionId' : IDL.Nat,
+    'nextTimer' : IDL.Opt(TimerId),
+    'expectedExecutionTime' : IDL.Opt(Time),
+    'lastExecutionTime' : Time,
+  });
+  const Stats = IDL.Record({
+    'tt' : Stats__1,
+    'permittedDrift' : IDL.Nat,
+    'defaultTake' : IDL.Nat,
+    'owner' : IDL.Principal,
+    'memberIndexCount' : IDL.Nat,
+    'permissionsIndexCount' : IDL.Nat,
+    'cycleShareTimerID' : IDL.Opt(IDL.Nat),
+    'namespaceStoreCount' : IDL.Nat,
+    'maxTake' : IDL.Nat,
+    'txWindow' : IDL.Nat,
   });
   const AuthorizedRequestItem = IDL.Tuple(
-    ListItem__1,
-    IDL.Vec(IDL.Vec(List__1)),
+    ListItem__2,
+    IDL.Vec(IDL.Vec(List__2)),
   );
   const ManageRequestItem = IDL.Variant({
     'UpdateDefaultTake' : IDL.Nat,
@@ -181,6 +237,7 @@ export const idlFactory = ({ IDL }) => {
   });
   const ManageRequest = IDL.Vec(ManageRequestItem);
   const ManageResultError = IDL.Variant({
+    'TooManyRequests' : IDL.Null,
     'Unauthorized' : IDL.Null,
     'Other' : IDL.Text,
   });
@@ -189,12 +246,12 @@ export const idlFactory = ({ IDL }) => {
   );
   const ManageResponse = IDL.Vec(ManageResult);
   const ManageListMembershipAction = IDL.Variant({
-    'Add' : ListItem__1,
-    'Remove' : ListItem__1,
+    'Add' : ListItem__2,
+    'Remove' : ListItem__2,
   });
   const ManageListMembershipRequestItem = IDL.Record({
     'action' : ManageListMembershipAction,
-    'list' : List__1,
+    'list' : List__2,
     'memo' : IDL.Opt(IDL.Vec(IDL.Nat8)),
     'from_subaccount' : IDL.Opt(Subaccount__1),
     'created_at_time' : IDL.Opt(IDL.Nat),
@@ -202,15 +259,20 @@ export const idlFactory = ({ IDL }) => {
   const ManageListMembershipRequest = IDL.Vec(ManageListMembershipRequestItem);
   const TransactionID = IDL.Nat;
   const ManageListMembershipError = IDL.Variant({
+    'TooManyRequests' : IDL.Null,
     'NotFound' : IDL.Null,
     'Unauthorized' : IDL.Null,
     'Other' : IDL.Text,
+    'Exists' : IDL.Null,
   });
   const ManageListMembershipResult = IDL.Opt(
-    IDL.Variant({ 'Ok' : TransactionID, 'Err' : ManageListMembershipError })
+    IDL.Variant({
+      'Ok' : TransactionID,
+      'Err' : ManageListMembershipError,
+      'TooManyRequests' : IDL.Null,
+    })
   );
   const ManageListMembershipResponse = IDL.Vec(ManageListMembershipResult);
-  const DataItemMap__1 = IDL.Vec(IDL.Tuple(IDL.Text, DataItem__1));
   const ManageListPropertyRequestAction = IDL.Variant({
     'Metadata' : IDL.Record({
       'key' : IDL.Text,
@@ -218,30 +280,31 @@ export const idlFactory = ({ IDL }) => {
     }),
     'Rename' : IDL.Text,
     'ChangePermissions' : IDL.Variant({
-      'Read' : IDL.Variant({ 'Add' : ListItem__1, 'Remove' : ListItem__1 }),
-      'Write' : IDL.Variant({ 'Add' : ListItem__1, 'Remove' : ListItem__1 }),
-      'Admin' : IDL.Variant({ 'Add' : ListItem__1, 'Remove' : ListItem__1 }),
+      'Read' : IDL.Variant({ 'Add' : ListItem__2, 'Remove' : ListItem__2 }),
+      'Write' : IDL.Variant({ 'Add' : ListItem__2, 'Remove' : ListItem__2 }),
+      'Admin' : IDL.Variant({ 'Add' : ListItem__2, 'Remove' : ListItem__2 }),
       'Permissions' : IDL.Variant({
-        'Add' : ListItem__1,
-        'Remove' : ListItem__1,
+        'Add' : ListItem__2,
+        'Remove' : ListItem__2,
       }),
     }),
     'Delete' : IDL.Null,
     'Create' : IDL.Record({
-      'members' : IDL.Vec(ListItem__1),
-      'admin' : IDL.Opt(ListItem__1),
-      'metadata' : DataItemMap,
+      'members' : IDL.Vec(ListItem__2),
+      'admin' : IDL.Opt(ListItem__2),
+      'metadata' : DataItemMap__1,
     }),
   });
   const ManageListPropertyRequestItem = IDL.Record({
     'action' : ManageListPropertyRequestAction,
-    'list' : List__1,
+    'list' : List__2,
     'memo' : IDL.Opt(IDL.Vec(IDL.Nat8)),
     'from_subaccount' : IDL.Opt(Subaccount__1),
     'created_at_time' : IDL.Opt(IDL.Nat),
   });
   const ManageListPropertyRequest = IDL.Vec(ManageListPropertyRequestItem);
   const ManageListPropertyError = IDL.Variant({
+    'TooManyRequests' : IDL.Null,
     'IllegalAdmin' : IDL.Null,
     'IllegalPermission' : IDL.Null,
     'NotFound' : IDL.Null,
@@ -253,21 +316,71 @@ export const idlFactory = ({ IDL }) => {
     IDL.Variant({ 'Ok' : TransactionID, 'Err' : ManageListPropertyError })
   );
   const ManageListPropertyResponse = IDL.Vec(ManageListPropertyResult);
+  const DataItemMap = IDL.Vec(IDL.Tuple(IDL.Text, DataItem__1));
+  Value.fill(
+    IDL.Variant({
+      'Int' : IDL.Int,
+      'Map' : IDL.Vec(IDL.Tuple(IDL.Text, Value)),
+      'Nat' : IDL.Nat,
+      'Blob' : IDL.Vec(IDL.Nat8),
+      'Text' : IDL.Text,
+      'Array' : IDL.Vec(Value),
+    })
+  );
+  const IdentityToken__1 = IDL.Variant({
+    'Int' : IDL.Int,
+    'Map' : IDL.Vec(IDL.Tuple(IDL.Text, Value)),
+    'Nat' : IDL.Nat,
+    'Blob' : IDL.Vec(IDL.Nat8),
+    'Text' : IDL.Text,
+    'Array' : IDL.Vec(Value),
+  });
+  const IdentityRequestError = IDL.Variant({
+    'ExpirationError' : IDL.Null,
+    'NotFound' : IDL.Null,
+    'NotAMember' : IDL.Null,
+    'Other' : IDL.Text,
+  });
+  const IdentityRequestResult = IDL.Variant({
+    'Ok' : IdentityToken__1,
+    'Err' : IdentityRequestError,
+  });
+  const IdentityToken = IDL.Variant({
+    'Int' : IDL.Int,
+    'Map' : IDL.Vec(IDL.Tuple(IDL.Text, Value)),
+    'Nat' : IDL.Nat,
+    'Blob' : IDL.Vec(IDL.Nat8),
+    'Text' : IDL.Text,
+    'Array' : IDL.Vec(Value),
+  });
+  const IdentityCertificate = IDL.Record({
+    'token' : IdentityToken__1,
+    'certificate' : IDL.Vec(IDL.Nat8),
+    'witness' : IDL.Vec(IDL.Nat8),
+  });
   const Token = IDL.Service({
+    'auto_init' : IDL.Func([], [], []),
     'deposit_cycles' : IDL.Func([], [], []),
-    'icrc_75_get_list_lists' : IDL.Func(
-        [List__2, IDL.Opt(List__2), IDL.Opt(IDL.Nat)],
-        [IDL.Vec(List__2)],
+    'getLedger' : IDL.Func([], [IDL.Vec(Value__1)], ['query']),
+    'get_cycle_balance' : IDL.Func([], [IDL.Nat], ['query']),
+    'icrc10_supported_standards' : IDL.Func(
+        [],
+        [IDL.Vec(ICRC10Record)],
         ['query'],
       ),
-    'icrc_75_get_list_members_admin' : IDL.Func(
-        [List__2, IDL.Opt(ListItem__2), IDL.Opt(IDL.Nat)],
-        [IDL.Vec(ListItem__2)],
+    'icrc75_get_list_lists' : IDL.Func(
+        [List__1, IDL.Opt(List__1), IDL.Opt(IDL.Nat)],
+        [IDL.Vec(List__1)],
         ['query'],
       ),
-    'icrc_75_get_list_permissions_admin' : IDL.Func(
+    'icrc75_get_list_members_admin' : IDL.Func(
+        [List__1, IDL.Opt(ListItem__1), IDL.Opt(IDL.Nat)],
+        [IDL.Vec(ListItem__1)],
+        ['query'],
+      ),
+    'icrc75_get_list_permissions_admin' : IDL.Func(
         [
-          List__2,
+          List__1,
           IDL.Opt(Permission__1),
           IDL.Opt(PermissionListItem__1),
           IDL.Opt(IDL.Nat),
@@ -275,32 +388,43 @@ export const idlFactory = ({ IDL }) => {
         [PermissionList__1],
         ['query'],
       ),
-    'icrc_75_get_lists' : IDL.Func(
-        [IDL.Opt(IDL.Text), IDL.Bool, IDL.Opt(List__2), IDL.Opt(IDL.Nat)],
+    'icrc75_get_lists' : IDL.Func(
+        [IDL.Opt(IDL.Text), IDL.Bool, IDL.Opt(List__1), IDL.Opt(IDL.Nat)],
         [IDL.Vec(ListRecord)],
         ['query'],
       ),
-    'icrc_75_is_member' : IDL.Func(
+    'icrc75_get_stats' : IDL.Func([], [Stats], ['query']),
+    'icrc75_is_member' : IDL.Func(
         [IDL.Vec(AuthorizedRequestItem)],
         [IDL.Vec(IDL.Bool)],
         ['query'],
       ),
-    'icrc_75_manage' : IDL.Func([ManageRequest], [ManageResponse], []),
-    'icrc_75_manage_list_membership' : IDL.Func(
+    'icrc75_manage' : IDL.Func([ManageRequest], [ManageResponse], []),
+    'icrc75_manage_list_membership' : IDL.Func(
         [ManageListMembershipRequest],
         [ManageListMembershipResponse],
         [],
       ),
-    'icrc_75_member_of' : IDL.Func(
-        [ListItem__2, IDL.Opt(List__2), IDL.Opt(IDL.Nat)],
-        [IDL.Vec(List__2)],
-        ['query'],
-      ),
-    'icrc_75_metadata' : IDL.Func([], [DataItemMap__1], ['query']),
-    'manage_list_properties' : IDL.Func(
+    'icrc75_manage_list_properties' : IDL.Func(
         [ManageListPropertyRequest],
         [ManageListPropertyResponse],
         [],
+      ),
+    'icrc75_member_of' : IDL.Func(
+        [ListItem__1, IDL.Opt(List__1), IDL.Opt(IDL.Nat)],
+        [IDL.Vec(List__1)],
+        ['query'],
+      ),
+    'icrc75_metadata' : IDL.Func([], [DataItemMap], ['query']),
+    'icrc75_request_token' : IDL.Func(
+        [ListItem__1, List__1, IDL.Opt(IDL.Nat)],
+        [IdentityRequestResult],
+        [],
+      ),
+    'icrc75_retrieve_token' : IDL.Func(
+        [IdentityToken],
+        [IdentityCertificate],
+        ['query'],
       ),
   });
   return Token;
@@ -389,7 +513,8 @@ export const init = ({ IDL }) => {
   });
   const PermissionListItem = IDL.Tuple(Permission, ListItem);
   const PermissionList = IDL.Vec(PermissionListItem);
-  const ICRC16Map = IDL.Vec(IDL.Tuple(IDL.Text, DataItem));
+  const ICRC16MapItem = IDL.Tuple(IDL.Text, DataItem);
+  const ICRC16Map = IDL.Vec(ICRC16MapItem);
   const NamespaceRecordShared = IDL.Record({
     'permissions' : PermissionList,
     'members' : IDL.Vec(ListItem),
@@ -399,6 +524,8 @@ export const init = ({ IDL }) => {
   const InitArgs = IDL.Opt(
     IDL.Record({
       'existingNamespaces' : IDL.Opt(IDL.Vec(NamespaceRecordShared)),
+      'cycleShareTimerID' : IDL.Opt(IDL.Nat),
+      'certificateNonce' : IDL.Opt(IDL.Nat),
     })
   );
   return [InitArgs];

@@ -128,7 +128,7 @@ module {
       
     };
 
-    let state : MigrationTypes.Current.State = {
+    let state : v0_1_0.State = {
       namespaceStore = namespacesStore;
       domainIndex = domainIndex;
       memberIndex = memberIndex;

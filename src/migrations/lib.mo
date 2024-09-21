@@ -1,6 +1,7 @@
 import MigrationTypes "./types";
 import v0_0_0 "./v000_000_000";
 import v0_1_0 "./v000_001_000";
+import v0_1_1 "./v000_001_001";
 import D "mo:base/Debug";
 
 module {
@@ -11,6 +12,7 @@ module {
 
   let upgrades = [
     v0_1_0.upgrade,
+    v0_1_1.upgrade,
     // do not forget to add your new migration upgrade method here
   ];
 
@@ -18,6 +20,7 @@ module {
     return switch (state) {
       case (#v0_0_0(_)) 0;
       case (#v0_1_0(_)) 1;
+      case (#v0_1_1(_)) 2;
       // do not forget to add your new migration id here
       // should be increased by 1 as it will be later used as an index to get upgrade/downgrade methods
     };

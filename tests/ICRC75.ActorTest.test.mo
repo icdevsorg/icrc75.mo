@@ -66,6 +66,8 @@ let Vector = ICRC75.Vector;
         {
           tt = null;
           addRecord = null;
+          get_certificate_store = null;
+          updated_certification = null;
           advanced = ?{
             icrc85 = {
               kill_switch= ?true;
@@ -89,7 +91,7 @@ let Vector = ICRC75.Vector;
       case(?val) val;
     };
       
-    let icrc75Store = ICRC75.init(ICRC75.initialState(), #v0_1_0(#id), args75, canister);
+    let icrc75Store = ICRC75.migrate(ICRC75.initialState(), #v0_1_0(#id), args75, canister);
 
     let icrc75 = ICRC75.ICRC75(?icrc75Store, canister, environment75);
 

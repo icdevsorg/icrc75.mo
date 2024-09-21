@@ -139,6 +139,8 @@ let isMember = ICRC75.is_member(caller, [(#Identity(caller), [[]])]);
 - `get_list_lists(caller: Principal, namespace: List, prev: ?List, take: ?Nat) : [List]`
 - `member_of(caller: Principal, listItem: ListItem, prev: ?List, take: ?Nat) : [List]`
 - `is_member(caller: Principal, request: [AuthorizedRequestItem]) : [Bool]`
+- `request_token<system>(caller: Principal, item: ListItem, list: List, exp: ?Nat)`
+- `query retrieve_token(caller: Principal, token : IdentityToken ) : IdentityCertificate`
 
 ## Data Structures
 
@@ -179,6 +181,65 @@ type Permission = {
   #Permissions;
 };
 ```
+
+## Token System Overview
+
+The ICRC-75 implementation provides a token system that enables the attestation of membership within a specified identity list. This system issues and validates **IdentityTokens**, allowing users to prove their membership in a list, manage token expiration, and retrieve token details for verification purposes. The token system plays a crucial role in securely validating that an individual or entity belongs to a specific group or namespace.
+
+### Token Request Workflow
+
+1. **Requesting a Token**:  
+   Users can request a token for a specific identity list by invoking the `request_token` function. This function checks the membership of the requesting principal within the specified list. If the requester is found to be a valid member, a token is generated.
+
+2. **Expiration Management**:  
+   Optionally, tokens can have an expiration time specified by the requester. However, the expiration time cannot exceed the maximum validity period set in the list's metadata (`icrc75:maxValidNS`). If no expiration time is provided, the token may remain valid indefinitely, depending on the list's configuration.
+
+3. **Token Structure**:  
+   A token includes several key-value pairs:
+   - **`identity`**: The principal (or member) for whom the token is issued.
+   - **`namespace`**: The identity list (or namespace) to which the token belongs.
+   - **`issued`**: The timestamp when the token was issued.
+   - **`authority`**: The canister issuing the token.
+   - **`nonce`**: A unique value to prevent replay attacks.
+   - **`expires`** (optional): The expiration time of the token, if applicable.
+
+4. **Certification**:  
+   If the environment supports certification, the token is certified using the canister's certification store. A certified token allows external parties to verify the integrity of the token using cryptographic techniques. The certification process ensures that the issued token is legitimate and has not been tampered with.
+
+### Token Retrieval and Validation
+
+1. **Token Retrieval**:  
+   A previously issued token can be retrieved by invoking the `retrieve_token` function. This function verifies the integrity of the token by:
+   - Checking whether the token has expired.
+   - Validating the nonce against the stored certificate data.
+
+2. **Certificate and Witness Verification**:  
+   Upon retrieving the token, the function also generates a **witness** that can be used alongside the certificate to prove the validity of the token to third parties. This involves revealing the token’s inclusion in the certification tree and generating a cryptographic proof that external services or parties can validate.
+
+3. **Token Integrity**:  
+   The system ensures that the integrity of the token is maintained by performing checks on the nonce, authority, and membership status. If any part of the token is invalid or expired, appropriate errors are returned.
+
+### Error Handling
+
+- **NotFound**: Returned when the requested list does not exist.
+- **NotAMember**: Returned when the requesting principal is not a member of the specified list.
+- **ExpirationError**: Returned if the requested expiration time exceeds the maximum allowed for the list.
+- **ExpiredToken**: Raised during token retrieval if the token has expired.
+
+### Example Use Cases
+
+- **Requesting a Token**:
+   ```motoko
+   let result = ICRC75.request_token(caller, #Identity(caller), "exampleList", ?3600);
+   ```
+
+- **Retrieving and Verifying a Token**:
+   ```motoko
+   let certificate = ICRC75.retrieve_token(caller, requestedToken);
+   // Validate the certificate externally using the witness and certificate provided.
+   ```
+
+The token system allows for flexible and secure attestation of membership, enabling integration with external systems that require proof of membership in a decentralized manner.
 
 ## ICRC-75 Standard
 

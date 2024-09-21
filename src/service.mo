@@ -49,6 +49,15 @@ module {
     #Set : [DataItem];
   };
 
+  public type Value = {
+    #Int : Int;
+    #Nat : Nat;
+    #Text : Text;
+    #Blob : Blob;
+    #Array :  [Value];
+    #Map : [(Text, Value)];
+  };
+
   public type DataItemMap = [(Text, DataItem)];
 
   public type List = Text;
@@ -106,6 +115,7 @@ module {
 
   public type ManageListMembershipError = {
     #Unauthorized;
+    #TooManyRequests;
     #NotFound;
     #Exists;
     #Other : Text;
@@ -115,12 +125,14 @@ module {
 
   public type ManageListMembershipResult = ?{
     #Ok : TransactionID;
+    #TooManyRequests;
     #Err : ManageListMembershipError;
   };
 
   public type ManageListPropertyError = {
      #Unauthorized;
     #NotFound;
+    #TooManyRequests;
     #Exists;
     #IllegalAdmin;
     #IllegalPermission;
@@ -131,6 +143,7 @@ module {
 
   public type ManageListPropertyResult = ?{
     #Ok : TransactionID;
+    
     #Err : ManageListPropertyError;
   };
 
@@ -145,6 +158,7 @@ module {
 
   public type ManageResultError = {
     #Unauthorized;
+    #TooManyRequests;
     #Other : Text;
   };
 
@@ -155,18 +169,32 @@ module {
     #Err : ManageResultError;
   };
 
-  public type IdentityToken = {
+  public type IdentityRequestResult = {
+    #Ok : IdentityToken;
+    #Err : IdentityRequestError;
+  };
+
+  public type IdentityRequestError = {
+    #NotFound;
+    #NotAMember;
+    #ExpirationError;
+    #Other : Text;
+  };
+
+  public type IdentityToken = Value;
+  
+  /* {
     authority : Principal;
     namespace : Text;
     issued : Nat;
-    expires : Nat;
+    expires : ?Nat;
     member : ListItem;
     nonce : Nat;
-  };
+  }; */
 
   public type IdentityCertificate = {
     token : IdentityToken;
-    witness : Witness;
+    witness : Blob;
     certificate : Blob;
   };
 
@@ -224,6 +252,8 @@ module {
     icrc75_get_list_lists : query (List, ?List, ?Nat) ->  async [List];
     icrc75_member_of : query(ListItem, ?List, ?Nat) ->  async[List];
     icrc75_is_member : query([AuthorizedRequestItem]) ->  async [Bool];
+    icrc75_request_token : (ListItem, List, ?Nat) -> async IdentityRequestResult;
+    icrc75_retrieve_token : (IdentityToken, Witness) -> async IdentityCertificate;
   };
 };
 

@@ -1,12 +1,14 @@
 import Blob "mo:base/Blob";
 import Array "mo:base/Array";
 import Buffer "mo:base/Buffer";
+import CertifiedData "mo:base/CertifiedData";
 import Cycles "mo:base/ExperimentalCycles";
 import D "mo:base/Debug";
 import Error "mo:base/Error";
 import Int "mo:base/Int";
 import Iter "mo:base/Iter";
 import Nat "mo:base/Nat";
+import Nat8 "mo:base/Nat8";
 import Nat64 "mo:base/Nat64";
 import Principal "mo:base/Principal";
 import Result "mo:base/Result";
@@ -15,13 +17,16 @@ import Time "mo:base/Time";
 import List "mo:base/List";
 import Account "mo:icrc1-mo/ICRC1/Account";
 import Timer "mo:base/Timer";
+import CertTree "mo:ic-certification/CertTree";
 
 import TT "mo:timer-tool";
 import ovsfixed "mo:ovs-fixed";
 import Star "mo:star/star";
+import RepIndy "mo:rep-indy-hash";
 
 import Migration "./migrations";
 import MigrationTypes "./migrations/types";
+
 
 import Service "./service";
 
@@ -56,11 +61,16 @@ module {
 
   public type Value =           MigrationTypes.Current.Value;
   public type ICRC16Map =           MigrationTypes.Current.ICRC16Map;
+  public type ICRC16MapItem =      MigrationTypes.Current.ICRC16MapItem;
   public type DataItem =            MigrationTypes.Current.DataItem;
   public type List =                MigrationTypes.Current.List;
   public type ListItem =            MigrationTypes.Current.ListItem;
   public type Identity =            MigrationTypes.Current.Identity;
   public type Account =             MigrationTypes.Current.Account;
+
+  public type IdentityToken =       Service.IdentityToken;
+  public type IdentityCertificate = Service.IdentityCertificate;
+  public type IdentityRequestResult = Service.IdentityRequestResult;
  
   public type ListRecord =            MigrationTypes.Current.ListRecord;
   public type Permission =          MigrationTypes.Current.Permission;
@@ -93,8 +103,6 @@ module {
   public type ManageListPropertyError = MigrationTypes.Current.ManageListPropertyError;
 
 
-
-
   /// # `initialState`
   ///
   /// Creates and returns the initial state of the ICRC-75 system.
@@ -118,9 +126,9 @@ module {
   /// ## Value
   ///
   /// `#v0_1_0(#id)`: A unique identifier representing the version of the  state format currently in use, as defined by the `State` data type.
-  public let currentStateVersion = #v0_1_0(#id);
+  public let currentStateVersion = #v0_1_1(#id);
 
-  public let init = Migration.migrate;
+  public let migrate = Migration.migrate;
   
   public let Map = MigrationTypes.Current.Map;
   public let Set = MigrationTypes.Current.Set;
@@ -147,7 +155,8 @@ module {
       announce = true;
       queryItem = true;
       managemember = true;
-      managelist = true
+      managelist = true;
+      certificate = true;
     };
 
     debug if(debug_channel.announce) {
@@ -167,16 +176,21 @@ module {
     /// ```
     var state : CurrentState = switch(stored){
       case(null) {
-        let #v0_1_0(#data(foundState)) = init(initialState(),currentStateVersion, null, canister);
+        let #v0_1_1(#data(foundState)) = migrate(initialState(),currentStateVersion, null, canister);
         foundState;
       };
       case(?val) {
-        let #v0_1_0(#data(foundState)) = init(val,currentStateVersion, null, canister);
+        let #v0_1_1(#data(foundState)) = migrate(val, currentStateVersion, null, canister);
         foundState;
       };
     };
 
-    public let migrate = Migration.migrate;
+    
+
+    public func init<system>() : () {
+      debug if(debug_channel.announce)  D.print(debug_show(("ICRC75 in init starting timer tool")));
+      ensureTT<system>();
+    };
 
     
     /// # `get_state`
@@ -210,7 +224,9 @@ module {
         [("txWindow", #Nat(state.metadata.txWindow)),
         ("maxTake", #Nat(state.metadata.maxTake)),
         ("defaultTake", #Nat(state.metadata.defaultTake)),
-        ("permitedDrift", #Nat(state.metadata.permittedDrift))]
+        ("permitedDrift", #Nat(state.metadata.permittedDrift)),
+        ("maxQuery", #Nat(state.metadata.maxQuery)),
+        ("maxUpdate", #Nat(state.metadata.maxUpdate))];
     };
 
 
@@ -267,29 +283,29 @@ module {
 
     ///MARK: actor mangement
 
-    var _haveTimer = ?false;
+    var _haveTimer : ?Bool = null;
+
+
 
     private func ensureTT<system>(){
       let haveTimer = switch(_haveTimer){
         case(?val) val;
         case(null){
            let result = (switch(environment.advanced){
-                case(?val) {
-                  switch(val.icrc85.kill_switch){
-                    
-                        case(null) true;
-                        case(?val) val;
-                     
-                  };
+              case(?val) {
+                switch(val.icrc85.kill_switch){
+                  case(null) true;
+                  case(?val) val;
                 };
-                case(null) true;
-              });
+              };
+              case(null) true;
+            });
           _haveTimer := ?result;
           result;
         };
       };
-      
-      if(haveTimer){
+      debug if(debug_channel.announce) D.print(debug_show(("ensureTT", haveTimer)));
+      if(haveTimer == true){
         ignore tt<system>();
       };
     };
@@ -302,6 +318,9 @@ module {
 
       //make sure tt is set
       ignore ensureTT<system>();
+      if(request.size() > state.metadata.maxUpdate){
+        return [?#Err(#TooManyRequests)];
+      };
       state.icrc85.activeActions := state.icrc85.activeActions + 1;
 
       if(state.owner != caller){
@@ -353,7 +372,7 @@ module {
     /// ```
     public func get_stats() : Stats {
       return {
-        
+        cycleShareTimerID = state.icrc85.nextCycleActionId;
         namespaceStoreCount = BTree.size(state.namespaceStore);
         memberIndexCount = Map.size(state.memberIndex);
         permissionsIndexCount  = Map.size(state.permissionsIndex);
@@ -362,6 +381,8 @@ module {
         defaultTake = state.metadata.defaultTake;
         permittedDrift = state.metadata.permittedDrift;
         owner = state.owner;
+        tt = query_tt().getStats();
+        //todo: return timer-tool stats
         
       };
     };
@@ -409,7 +430,10 @@ module {
 
     public func manage_list_membership(caller: Principal, request: ManageListMembershipRequest, canChange: CanChangeMembership) : async* ManageListMembershipResponse {
 
-      ignore ensureTT<system>();
+      ensureTT<system>();
+      if(request.size() > state.metadata.maxUpdate){
+        return [?#Err(#TooManyRequests)];
+      };
       state.icrc85.activeActions := state.icrc85.activeActions + 1;
 
       //check permissions
@@ -471,7 +495,7 @@ module {
         };
 
         let trxTop = Buffer.Buffer<(Text, Value)>(1);
-        trxTop.add(("btype", #Text("memChange")));
+        trxTop.add(("btype", #Text("75memChange")));
         if(thisItem.created_at_time == null){
           trxTop.add(("ts", #Nat(Int.abs(Time.now()))));
         };
@@ -586,7 +610,10 @@ module {
 
     public func manage_list_properties(caller: Principal, request: ManageListPropertyRequest, canChange: CanChangeProperty) : async* ManageListPropertyResponse {
 
-      ignore ensureTT<system>();
+      ensureTT<system>();
+      if(request.size() > state.metadata.maxUpdate){
+        return [?#Err(#TooManyRequests)];
+      };
       state.icrc85.activeActions := state.icrc85.activeActions + 1;
 
       //check permissions
@@ -712,16 +739,19 @@ module {
               case(null){};
             };
             trxTop.add(("btype", #Text("75listModify")));
-            trx.add(("caller", #Blob(Principal.toBlob(caller))));
+            trx.add(("list", #Text(thisItem.list)));
+            trx.add(("modifier", #Blob(Principal.toBlob(caller))));
             trx.add(("newName", #Text(val)));
           };
           case(#Delete){
             trxTop.add(("btype", #Text("75listDelete")));
-            trx.add(("caller", #Blob(Principal.toBlob(caller))));
+            trx.add(("list", #Text(thisItem.list)));
+            trx.add(("modifier", #Blob(Principal.toBlob(caller))));
           };
           case(#Metadata(val)){
             trxTop.add(("btype", #Text("75listModify")));
-            trx.add(("caller", #Blob(Principal.toBlob(caller))));
+            trx.add(("list", #Text(thisItem.list)));
+            trx.add(("modifier", #Blob(Principal.toBlob(caller))));
             switch(val.value){
               case(?metadata){
                trx.add(("metadata", #Map([(val.key, ICRC16Conversion.CandySharedToValue(metadata))])));
@@ -733,17 +763,18 @@ module {
           };
           case(#ChangePermissions(val)){
             trxTop.add(("btype", #Text("75permChange")));
-            trx.add(("caller", #Blob(Principal.toBlob(caller))));
+            trx.add(("changer", #Blob(Principal.toBlob(caller))));
+            trx.add(("list", #Text(thisItem.list)));
             switch(val){
               case(#Read(#Add(#Identity(val)))){
                 trx.add(("action", #Text("add")));
                 trx.add(("perm", #Text("read")));
-                trx.add(("identity", #Blob(Principal.toBlob(val))));
+                trx.add(("targetIdentity", #Blob(Principal.toBlob(val))));
               };
               case(#Read(#Add(#List(val)))){
                 trx.add(("action", #Text("add")));
                 trx.add(("perm", #Text("read")));
-                trx.add(("list", #Text(val)));
+                trx.add(("targetList", #Text(val)));
               };
               case(#Read(#Add(_))){
                 results.add(?(#Err(#IllegalPermission)));
@@ -752,12 +783,12 @@ module {
               case(#Read(#Remove(#Identity(val)))){
                 trx.add(("action", #Text("remove")));
                 trx.add(("perm", #Text("read")));
-                trx.add(("identity", #Blob(Principal.toBlob(val))));
+                trx.add(("targetIdentity", #Blob(Principal.toBlob(val))));
               };
               case(#Read(#Remove(#List(val)))){
                 trx.add(("action", #Text("remove")));
                 trx.add(("perm", #Text("read")));
-                trx.add(("list", #Text(val)));
+                trx.add(("targetList", #Text(val)));
               };
               case(#Read(#Remove(_))){
                 results.add(?(#Err(#IllegalPermission)));
@@ -765,12 +796,12 @@ module {
               case(#Write(#Add(#Identity(val)))){
                 trx.add(("action", #Text("add")));
                 trx.add(("perm", #Text("write")));
-                trx.add(("identity", #Blob(Principal.toBlob(val))));
+                trx.add(("targetIdentity", #Blob(Principal.toBlob(val))));
               };
               case(#Write(#Add(#List(val)))){
                 trx.add(("action", #Text("add")));
                 trx.add(("perm", #Text("write")));
-                trx.add(("list", #Text(val)));
+                trx.add(("targetList", #Text(val)));
               };
               case(#Write(#Add(_))){
                 results.add(?(#Err(#IllegalPermission)));
@@ -779,12 +810,12 @@ module {
               case(#Write(#Remove(#Identity(val)))){
                 trx.add(("action", #Text("remove")));
                 trx.add(("perm", #Text("write")));
-                trx.add(("identity", #Blob(Principal.toBlob(val))));
+                trx.add(("targetIdentity", #Blob(Principal.toBlob(val))));
               };
               case(#Write(#Remove(#List(val)))){
                 trx.add(("action", #Text("remove")));
                 trx.add(("perm", #Text("write")));
-                trx.add(("list", #Text(val)));
+                trx.add(("targetList", #Text(val)));
               };
               case(#Write(#Remove(_))){
                 results.add(?(#Err(#IllegalPermission)));
@@ -792,12 +823,12 @@ module {
               case(#Admin(#Add(#Identity(val)))){
                 trx.add(("action", #Text("add")));
                 trx.add(("perm", #Text("admin")));
-                trx.add(("identity", #Blob(Principal.toBlob(val))));
+                trx.add(("targetIdentity", #Blob(Principal.toBlob(val))));
               };
               case(#Admin(#Add(#List(val)))){
                 trx.add(("action", #Text("add")));
                 trx.add(("perm", #Text("admin")));
-                trx.add(("list", #Text(val)));
+                trx.add(("targetList", #Text(val)));
               };
               case(#Admin(#Add(_))){
                 results.add(?(#Err(#IllegalPermission)));
@@ -805,12 +836,12 @@ module {
               case(#Admin(#Remove(#Identity(val)))){
                 trx.add(("action", #Text("remove")));
                 trx.add(("perm", #Text("admin")));
-                trx.add(("identity", #Blob(Principal.toBlob(val))));
+                trx.add(("targetIdentity", #Blob(Principal.toBlob(val))));
               };
               case(#Admin(#Remove(#List(val)))){
                 trx.add(("action", #Text("remove")));
                 trx.add(("perm", #Text("admin")));
-                trx.add(("list", #Text(val)));
+                trx.add(("targetList", #Text(val)));
               };
               case(#Admin(#Remove(_))){
                 results.add(?(#Err(#IllegalPermission)));
@@ -818,12 +849,12 @@ module {
               case(#Permissions(#Add(#Identity(val)))){
                 trx.add(("action", #Text("add")));
                 trx.add(("perm", #Text("permissions")));
-                trx.add(("identity", #Blob(Principal.toBlob(val))));
+                trx.add(("targetIdentity", #Blob(Principal.toBlob(val))));
               };
               case(#Permissions(#Add(#List(val)))){
                 trx.add(("action", #Text("add")));
                 trx.add(("perm", #Text("permissions")));
-                trx.add(("list", #Text(val)));
+                trx.add(("targetList", #Text(val)));
               };
               case(#Permissions(#Add(_))){
                 results.add(?(#Err(#IllegalPermission)));
@@ -832,12 +863,12 @@ module {
               case(#Permissions(#Remove(#Identity(val)))){
                 trx.add(("action", #Text("remove")));
                 trx.add(("perm", #Text("permissions")));
-                trx.add(("identity", #Blob(Principal.toBlob(val))));
+                trx.add(("targetIdentity", #Blob(Principal.toBlob(val))));
               };
               case(#Permissions(#Remove(#List(val)))){
                 trx.add(("action", #Text("remove")));
                 trx.add(("perm", #Text("permissions")));
-                trx.add(("list", #Text(val)));
+                trx.add(("targetList", #Text(val)));
               };
               case(#Permissions(#Remove(_))){
                 results.add(?(#Err(#IllegalPermission)));
@@ -1241,7 +1272,7 @@ module {
 
     ignore environment.icrc10_register_supported_standards({
         name = "ICRC-75";
-        url = "https://github.com/dfinity/ICRC/ICRCs/ICRC-75/";
+        url = "https://github.com/dfinity/ICRC/ICRCs/ICRC-75";
     });
 
     ///MARK: Queries
@@ -1284,7 +1315,10 @@ module {
 
       label search for(thisItem in BTree.scanLimit<List, NamespaceRecord>(state.namespaceStore, Text.compare, start, end, #fwd, maxTake).results.vals()){
         //only show items if read permission or anon has read
-        switch(Set.has<ListItem>(thisItem.1.permissions.admin, listItemHash, #Identity(caller)), Set.has<ListItem>(thisItem.1.permissions.read, listItemHash, #Identity(caller)), Set.has<ListItem>(thisItem.1.permissions.read, listItemHash, #Identity(anonPrincipal))){
+        switch(
+          Set.has<ListItem>(thisItem.1.permissions.admin, listItemHash, #Identity(caller)), 
+          Set.has<ListItem>(thisItem.1.permissions.read, listItemHash, #Identity(caller)), 
+          Set.has<ListItem>(thisItem.1.permissions.read, listItemHash, #Identity(anonPrincipal))){
           case(false, false, false){
             if(findIdentityInCollectionList(caller, thisItem.1.permissions.admin) == false){
               if(findIdentityInCollectionList(caller, thisItem.1.permissions.read) == false){
@@ -1468,7 +1502,9 @@ module {
         } else{
           switch(prev){
             case(?prev){
-              if(prev == thisItem) bFound := true;
+              if(listItemHash.1(prev, thisItem)){
+                bFound := true;
+              };
             };
             case(null){};
           };
@@ -1640,6 +1676,7 @@ module {
     };
 
     public func get_list_lists(caller: Principal, namespace: List, prev: ?List, take : ?Nat) : [List]{
+      debug if(debug_channel.announce) D.print(debug_show(("Get list lists", namespace, prev, take)));
       let ?record = BTree.get(state.namespaceStore, Text.compare, namespace) else return [];
 
       switch(Set.has<ListItem>(record.permissions.admin, listItemHash, #Identity(caller)), Set.has<ListItem>(record.permissions.read, listItemHash, #Identity(caller))){
@@ -1669,6 +1706,8 @@ module {
         case(null) true;
       };
 
+      debug if(debug_channel.announce) D.print(debug_show(("Get list lists bFound", bFound, Set.toArray(record.members))));
+
       label search for(thisItem in Set.keys<ListItem>(record.members)){
         if(bFound){
           switch(thisItem){
@@ -1683,7 +1722,10 @@ module {
         } else{
           switch(prev){
             case(?prev){
-              if(prev == thisItem) bFound := true;
+              if(listItemHash.1(#List(prev), thisItem)){
+                bFound := true;
+              };
+               debug if(debug_channel.announce) D.print(debug_show(("Get list lists bFound now?", bFound)));
             };
             case(null){};
           };
@@ -2022,15 +2064,310 @@ module {
       };
     };
 
+    public func get_supported_blocks() : [{
+      block_type : Text;
+      url : Text;
+    }] {
+
+      return [
+        {
+          block_type = "75permChange";
+          url = "https://github.com/dfinity/ICRC/ICRCs/ICRC-75";
+        },
+        {
+          block_type = "75memChange";
+          url = "https://github.com/dfinity/ICRC/ICRCs/ICRC-75";
+        },
+        {
+          block_type = "75listCreate";
+          url = "https://github.com/dfinity/ICRC/ICRCs/ICRC-75";
+        },
+        {
+          block_type = "75listModify";
+          url = "https://github.com/dfinity/ICRC/ICRCs/ICRC-75";
+        },
+        {
+          block_type = "75listDelete";
+          url = "https://github.com/dfinity/ICRC/ICRCs/ICRC-75";
+        },
+        {
+          block_type = "75listCreate";
+          url = "https://github.com/dfinity/ICRC/ICRCs/ICRC-75";
+        },
+      ];
+    };
+
+    //MARK: Certifications
+
+    public func listItemAsValue(item: ListItem) : (Text, ICRC16.ValueShared){ 
+      switch(item){
+        case(#List(val)){
+          ("listItem", #Text(val));
+        };
+        case(#Identity(val)){
+          ("identity", #Blob(Principal.toBlob(val)));
+        };
+        case(#Account(val)){
+          switch(val.subaccount){
+            case(?sub){
+              ("account", #Array([#Blob(Principal.toBlob(val.owner)),#Blob(sub)]));
+            };
+            case(null){
+             ("account", #Array([#Blob(Principal.toBlob(val.owner))]));
+            };
+          };
+        };
+        case(#DataItem(val)){
+          ("dataItem", ICRC16Conversion.CandySharedToValue(val));
+        };
+      };
+    };
+
+    public func request_token<system>(caller: Principal, item: ListItem, list: List, exp: ?Nat) :  IdentityRequestResult {
+
+      //todo: set a timer for clean up of old tokens
+      //todo: gate somehow?
+
+      //getList
+
+      let ?thisList = BTree.get(state.namespaceStore, Text.compare, list) else {
+        debug if(debug_channel.certificate) D.print("List not found");
+        return #Err(#NotFound);
+      };
+
+
+      //validate item is part of the list
+      let isMember = is_member(canister, [(item, [[list]])]);
+
+      if(isMember.size() == 0){
+        return #Err(#NotAMember);
+      };
+
+      if(isMember[0] == false){
+         return #Err(#NotAMember);
+      };
+
+      //validate expirtion
+      let maxValid = if(thisList.metadata.size() > 0){
+        switch(Array.find<ICRC16MapItem>(thisList.metadata, func (x: ICRC16MapItem){
+          x.0 == "icrc75:maxValidNS";
+        })){
+          case(null) null;
+          case(?val){
+            switch(val.1){
+              case(#Nat(assignedMax)){
+                switch(exp){
+                  case(null){?assignedMax};
+                  case(?val){
+                    if(val > assignedMax){
+                      debug if(debug_channel.certificate) D.print("Exp too long");
+                       return #Err(#ExpirationError);
+                    } else {
+                      ?assignedMax;
+                    };
+                  };
+                };
+              };
+              case(_) null;
+            };
+            
+          };
+        };
+       } else null;
+
+       let expToUse = switch(maxValid, exp){
+         case(?max, ?val){
+           if(val < max){
+             ?val;
+           } else {
+             ?max;
+           };
+         };
+         case(null, ?val){
+           ?val;
+         };
+         case(?max, null){
+           ?max;
+         };
+          case(null, null){
+            null;
+          };
+       };
+
+      let itemMapItem : ICRC16MapItem = listItemAsValue(item);
+
+      let timeUsed = get_time();
+      let nonceUsed = state.certificateNonce;
+      
+
+      let token : ICRC16.ValueShared = ICRC16Conversion.CandySharedToValue(#Map(switch(expToUse){
+        case(null){
+          [
+            itemMapItem,
+            ("namespace", #Text(list)),
+            ("issued", #Nat(timeUsed)),
+            ("authority", #Blob(Principal.toBlob(canister))),
+            ("nonce", #Nat(nonceUsed))
+          ];
+        };
+        case(?val){
+          [
+           itemMapItem,
+            ("namespace", #Text(list)),
+            ("issued", #Nat(timeUsed)),
+            ("expires", #Nat(timeUsed + val)),
+            ("authority", #Blob(Principal.toBlob(canister))),
+            ("nonce", #Nat(state.certificateNonce))
+          ];
+        };
+      }));
+
+      //certify the new record if the cert store is provided
+
+      switch(environment.get_certificate_store){
+        
+        case(?gcs){
+          debug if(debug_channel.certificate) D.print("have store" # debug_show(gcs()));
+          let store = gcs();
+          let ct = CertTree.Ops(store);
+          ct.put([Text.encodeUtf8("icrc75:certs"), encodeBigEndian(state.certificateNonce)], Blob.fromArray(RepIndy.hash_val(token)));
+          ct.setCertifiedData();
+          state.certificateNonce := state.certificateNonce + 1;
+
+          switch(environment.updated_certification){
+            case(?uc){
+              debug if(debug_channel.certificate) D.print("have cert update");
+              ignore uc(store);
+            };
+            case(_){};
+          };
+        };
+        case(_){};
+      };
+
+      return #Ok(token);
+    };
+
+    public func retrieve_token(caller: Principal, token : IdentityToken ) : IdentityCertificate {
+
+      let expires = switch(token){
+        case(#Map(val)){
+          switch(Array.find<ICRC16MapItem>(val, func(x: ICRC16MapItem){
+            x.0 == "expires";
+          })){
+            case(null) null;
+            case(?val){
+              switch(val.1){
+                case(#Nat(val)){
+                  ?val;
+                };
+                case(_) null;
+              };
+            };
+          };
+        };
+        case(_){
+          D.trap("Invalid token");
+        };
+      };
+
+      switch(expires){
+        case(?exp){
+          if(exp < get_time()){
+            D.trap("Expired token");
+          };
+        };
+        case(null){};
+      };  
+
+      let nonce : Nat = switch(token){
+        case(#Map(val)){
+          switch(Array.find<ICRC16MapItem>(val, func(x: ICRC16MapItem){
+            x.0 == "nonce";
+          })){
+            case(null) D.trap("No nonce found");
+            case(?val){
+              switch(val.1){
+                case(#Nat(val)){
+                  val;
+                };
+                case(_) D.trap("Invalid nonce");
+              };
+            };
+          };
+        };
+        case(_){
+          D.trap("Invalid token");
+        };
+      };
+
+      switch(environment.get_certificate_store){
+        case(?gcs){
+          let ct = CertTree.Ops(gcs());
+          let foundWitness = ct.reveal([Text.encodeUtf8("icrc75:certs"), encodeBigEndian(nonce)]);
+          switch(foundWitness){
+            case(#empty){
+              D.trap("No witness found");
+            };
+            case(_){};
+
+          };
+
+          let witness = ct.encodeWitness(foundWitness);
+          return {
+            token = token;
+            witness = witness;
+            certificate = switch(CertifiedData.getCertificate()){
+              case(null){
+                debug if(debug_channel.certificate) D.print("certified returned null");
+                D.trap("certified returned null");
+              };
+              case(?val) val;
+            };
+          };
+        };
+        case(_){
+          D.trap("No store");
+        };
+      };
+    };
+
+    /// Encodes a number as big-endian bytes
+    ///
+    /// Arguments:
+    /// - `nat`: The number to encode
+    ///
+    /// Returns:
+    /// - The encoded bytes
+    func encodeBigEndian(nat: Nat): Blob {
+      var tempNat = nat;
+      var bitCount = 0;
+      while (tempNat > 0) {
+        bitCount += 1;
+        tempNat /= 2;
+      };
+      let byteCount = (bitCount + 7) / 8;
+
+      var buffer = Buffer.Buffer<Nat8>(byteCount);
+      for (i in Iter.range(0, byteCount-1)) {
+        let byteValue = Nat.div(nat, Nat.pow(256, i)) % 256;
+        buffer.insert(i, Nat8.fromNat(byteValue));
+      };
+
+      let item = Array.reverse(Buffer.toArray(buffer));
+      return Blob.fromArray(item);
+    };
+
     private func get_time() : Nat {
       Int.abs(Time.now());
     };
 
     private func scheduleCycleShare<system>() : async() {
       //check to see if it already exists
+      debug if(debug_channel.announce) D.print("in schedule cycle share");
       switch(state.icrc85.nextCycleActionId){
         case(?val){
-          switch(Map.get(tt().getState().actionIdIndex, Map.nhash, val)){
+          switch(Map.get(tt<system>().getState().actionIdIndex, Map.nhash, val)){
             case(?time) {
               //already in the queue
               return;
@@ -2058,23 +2395,30 @@ module {
     };
 
     private func shareCycles<system>() : async*(){
-
+      debug if(debug_channel.announce) D.print("in share cycles ");
       let lastReportId = switch(state.icrc85.lastActionReported){
         case(?val) val;
         case(null) 0;
       };
 
+      debug if(debug_channel.announce) D.print("last report id " # debug_show(lastReportId));
+
       let actions = if(state.icrc85.activeActions > 0){
         state.icrc85.activeActions;
       } else {1;};
+
+      debug if(debug_channel.announce) D.print("actions " # debug_show(actions));
 
       var cyclesToShare = 1_000_000_000_000; //1 XDR
 
       if(actions > 0){
         let additional = Nat.div(actions, 10000);
+        debug if(debug_channel.announce) D.print("additional " # debug_show(additional));
         cyclesToShare := cyclesToShare + (additional * 1_000_000_000_000);
         if(cyclesToShare > 100_000_000_000_000) cyclesToShare := 100_000_000_000_000;
       };
+
+      debug if(debug_channel.announce) D.print("cycles to share" # debug_show(cyclesToShare));
 
       try{
         await* ovsfixed.shareCycles<system>({
@@ -2082,10 +2426,10 @@ module {
           namespace = "org.icdevs.libraries.icrc75";
           actions = 1;
           schedule = func <system>(period: Nat) : async* (){
-            let result = tt().setActionSync<system>(get_time() + period, {actionType = "icrc85:ovs:shareaction:icrc75"; params = Blob.fromArray([]);});
+            let result = tt<system>().setActionSync<system>(get_time() + period, {actionType = "icrc85:ovs:shareaction:icrc75"; params = Blob.fromArray([]);});
             state.icrc85.nextCycleActionId := ?result.id;
           };
-          cycles = Cycles.balance();
+          cycles = cyclesToShare;
         });
       } catch(e){
         debug if (debug_channel.announce) D.print("error sharing cycles" # Error.message(e));
@@ -2094,6 +2438,22 @@ module {
     };
 
     private var tt_ : ?TT.TimerTool = null;
+
+    private func query_tt() : TT.TimerTool {
+      switch(tt_){
+        case(?val) val;
+        case(null){
+          debug if(debug_channel.announce) D.print("No timer tool set up");
+          let foundClass = switch(environment.tt){
+            case(?val) val;
+            case(null){
+              D.trap("No timer tool yet");
+            };
+          };
+          foundClass;
+        };
+      };
+    };
 
     private func tt<system>() : TT.TimerTool {
       switch(tt_){
@@ -2111,7 +2471,7 @@ module {
                 case(null) TT.init(TT.initialState(),#v0_1_0(#id), null, canister);
                 case(?val) TT.init(val,#v0_1_0(#id), null, canister);
               };
-              
+
               state.tt := ?timerState;
 
               
@@ -2138,7 +2498,9 @@ module {
           
 
           foundClass.registerExecutionListenerAsync(?"icrc85:ovs:shareaction:icrc75", handleIcrc85Action : TT.ExecutionAsyncHandler);
+          debug if(debug_channel.announce) D.print("Timer tool set up");
           ignore Timer.setTimer<system>(#nanoseconds(OneDay), scheduleCycleShare);
+
           foundClass;
         };
       };

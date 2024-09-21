@@ -88,7 +88,9 @@ module {
     #Permissions;
   };
 
-  public type ICRC16Map = [(Text, DataItem)];
+  public type ICRC16Map = [ICRC16MapItem];
+
+  public type ICRC16MapItem = (Text, DataItem);
 
   public type ICRC85Options = {
     kill_switch: ?Bool;
