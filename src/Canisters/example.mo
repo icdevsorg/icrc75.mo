@@ -55,7 +55,7 @@ shared ({ caller = _owner }) actor class Token  (
       Vector.size(fakeLedger) - 1;
     };
 
-    stable let icrc75_migration_state = ICRC75.migrate(ICRC75.initialState(), #v0_1_0(#id), init_args75, _owner);
+    stable let icrc75_migration_state = ICRC75.migrate(ICRC75.initialState(), #v0_1_1(#id), init_args75, _owner);
 
     let #v0_1_1(#data(icrc75_state_current)) = icrc75_migration_state;
 
@@ -159,8 +159,8 @@ shared ({ caller = _owner }) actor class Token  (
     return await* icrc75().manage_list_properties(msg.caller, request, null);
   };
 
-  public query(msg) func icrc75_get_lists(name: ?Text, includeArchived: Bool, cursor: ?List, limit: ?Nat) : async [ListRecord] {
-    return icrc75().get_lists(msg.caller, name, includeArchived, cursor, limit);
+  public query(msg) func icrc75_get_lists(name: ?Text, bMetadata: Bool, cursor: ?List, limit: ?Nat) : async [ListRecord] {
+    return icrc75().get_lists(msg.caller, name, bMetadata, cursor, limit);
   };
 
   public query(msg) func icrc75_get_list_members_admin(list: List, cursor: ?ListItem, limit: ?Nat) : async [ListItem] {

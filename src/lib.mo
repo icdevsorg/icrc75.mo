@@ -794,6 +794,11 @@ module {
                 results.add(?(#Err(#IllegalPermission)));
               };
               case(#Write(#Add(#Identity(val)))){
+                //anon can't be given write
+                if(val == anonPrincipal){
+                  results.add(?(#Err(#Unauthorized)));
+                  continue proc;
+                };
                 trx.add(("action", #Text("add")));
                 trx.add(("perm", #Text("write")));
                 trx.add(("targetIdentity", #Blob(Principal.toBlob(val))));
@@ -821,6 +826,11 @@ module {
                 results.add(?(#Err(#IllegalPermission)));
               };
               case(#Admin(#Add(#Identity(val)))){
+                 //anon can't be given admin
+                if(val == anonPrincipal){
+                  results.add(?(#Err(#Unauthorized)));
+                  continue proc;
+                };
                 trx.add(("action", #Text("add")));
                 trx.add(("perm", #Text("admin")));
                 trx.add(("targetIdentity", #Blob(Principal.toBlob(val))));
@@ -847,6 +857,11 @@ module {
                 results.add(?(#Err(#IllegalPermission)));
               };
               case(#Permissions(#Add(#Identity(val)))){
+                 //anon can't be given permissions permission
+                if(val == anonPrincipal){
+                  results.add(?(#Err(#Unauthorized)));
+                  continue proc;
+                };
                 trx.add(("action", #Text("add")));
                 trx.add(("perm", #Text("permissions")));
                 trx.add(("targetIdentity", #Blob(Principal.toBlob(val))));
@@ -1322,7 +1337,11 @@ module {
           case(false, false, false){
             if(findIdentityInCollectionList(caller, thisItem.1.permissions.admin) == false){
               if(findIdentityInCollectionList(caller, thisItem.1.permissions.read) == false){
-                continue search;
+                if(findIdentityInCollectionList(anonPrincipal, thisItem.1.permissions.read) == true){
+                  
+                } else {
+                  continue search;
+                };
               };
             };
           };
@@ -1466,15 +1485,21 @@ module {
 
       let ?record = BTree.get(state.namespaceStore, Text.compare, namespace) else return [];
 
-      switch(Set.has<ListItem>(record.permissions.admin, listItemHash, #Identity(caller)), Set.has<ListItem>(record.permissions.read, listItemHash, #Identity(caller))){
-        case(false, false){
+      switch(
+        Set.has<ListItem>(record.permissions.admin, listItemHash, #Identity(caller)), 
+        Set.has<ListItem>(record.permissions.read, listItemHash, #Identity(caller)),
+        Set.has<ListItem>(record.permissions.read, listItemHash, #Identity(anonPrincipal))){
+        case(false, false, false){
           if(findIdentityInCollectionList(caller, record.permissions.admin) == false){
             if(findIdentityInCollectionList(caller, record.permissions.read) == false){
-              return [];
+              if(findIdentityInCollectionList(anonPrincipal, record.permissions.read) == true){}
+              else{
+                return [];
+              };
             };
           };
         };
-        case(_,_){};
+        case(_,_,_){};
       };
 
       let results = Buffer.Buffer<ListItem>(1);
@@ -1532,15 +1557,21 @@ module {
 
       let ?record = BTree.get(state.namespaceStore, Text.compare, namespace) else return [];
 
-      switch(Set.has<ListItem>(record.permissions.admin, listItemHash, #Identity(caller)), Set.has<ListItem>(record.permissions.permissions, listItemHash, #Identity(caller))){
-        case(false, false){
+      switch(
+        Set.has<ListItem>(record.permissions.admin, listItemHash, #Identity(caller)), 
+        Set.has<ListItem>(record.permissions.permissions, listItemHash, #Identity(caller)),
+        Set.has<ListItem>(record.permissions.read, listItemHash, #Identity(anonPrincipal))){
+        case(false, false, false){
           if(findIdentityInCollectionList(caller, record.permissions.admin) == false){
             if(findIdentityInCollectionList(caller, record.permissions.permissions) == false){
-              return [];
+              if(findIdentityInCollectionList(anonPrincipal, record.permissions.read) == true){}
+              else{
+                return [];
+              };
             };
           };
         };
-        case(_,_){};
+        case(_,_,_){};
       };
 
       let results = Buffer.Buffer<PermissionListItem>(1);
@@ -1679,15 +1710,21 @@ module {
       debug if(debug_channel.announce) D.print(debug_show(("Get list lists", namespace, prev, take)));
       let ?record = BTree.get(state.namespaceStore, Text.compare, namespace) else return [];
 
-      switch(Set.has<ListItem>(record.permissions.admin, listItemHash, #Identity(caller)), Set.has<ListItem>(record.permissions.read, listItemHash, #Identity(caller))){
-        case(false, false){
+      switch(
+        Set.has<ListItem>(record.permissions.admin, listItemHash, #Identity(caller)), 
+        Set.has<ListItem>(record.permissions.read, listItemHash, #Identity(caller)),
+        Set.has<ListItem>(record.permissions.read, listItemHash, #Identity(anonPrincipal))){
+        case(false, false, false){
           if(findIdentityInCollectionList(caller, record.permissions.admin) == false){
             if(findIdentityInCollectionList(caller, record.permissions.read) == false){
-              return [];
+              if(findIdentityInCollectionList(anonPrincipal, record.permissions.read) == true){}
+              else{
+                return [];
+              };
             };
           };
         };
-        case(_,_){};
+        case(_,_,_){};
       };
 
       let results = Buffer.Buffer<List>(1);
