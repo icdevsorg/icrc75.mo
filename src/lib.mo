@@ -9,13 +9,10 @@ import Int "mo:base/Int";
 import Iter "mo:base/Iter";
 import Nat "mo:base/Nat";
 import Nat8 "mo:base/Nat8";
-import Nat64 "mo:base/Nat64";
 import Principal "mo:base/Principal";
-import Result "mo:base/Result";
 import Text "mo:base/Text";
 import Time "mo:base/Time";
 import List "mo:base/List";
-import Account "mo:icrc1-mo/ICRC1/Account";
 import Timer "mo:base/Timer";
 import CertTree "mo:ic-certification/CertTree";
 
@@ -32,8 +29,6 @@ import Service "./service";
 
 
 module {
-
-
 
   ///MARK: Migration Types
   /// # State

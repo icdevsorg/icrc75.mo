@@ -1,5 +1,4 @@
 import List "mo:base/List";
-import Account "mo:icrc1-mo/ICRC1/Account";
 
 
 module {

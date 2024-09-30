@@ -79,6 +79,7 @@ module {
   public type ListItem = v0_1_0Types.ListItem;
   public type Subaccount = v0_1_0Types.Subaccount;
   public type Permission = v0_1_0Types.Permission;
+  public type ICRC16 = v0_1_0Types.DataItem;
   public type ICRC16Map = v0_1_0Types.ICRC16Map;
   public type ICRC16MapItem = v0_1_0Types.ICRC16MapItem;
   public type ICRC85Options = v0_1_0Types.ICRC85Options;
