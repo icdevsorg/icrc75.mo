@@ -603,6 +603,70 @@ module {
       return Buffer.toArray(results);
     };
 
+    //Note: This does not validate for custom logic held in the canUpdate function
+    public func validate_manage_list_membership(caller: Principal, request: ManageListMembershipRequest) : async* {
+      #Ok: Text;
+      #Err: Text;
+    } {
+      if(request.size() > state.metadata.maxUpdate){
+        return #Err("Too many Requests");
+      };
+
+      //check permissions
+      let cache = Map.new<Text, NamespaceRecord>();
+
+      let results = Buffer.Buffer<ManageListMembershipResult>(1);
+
+      let descriptionText = Buffer.Buffer<Text>(1);
+      
+      label proc for(thisItem in request.vals()){
+        //check permissions
+        let foundCache = switch(Map.get(cache, Map.thash, thisItem.list # Principal.toText(caller))){
+          case(?cacheItem) cacheItem;
+          case(null){
+            let found = switch(BTree.get(state.namespaceStore, Text.compare, thisItem.list)){
+              case(?record) record;
+              case(null) {
+                return #Err("Cannot find List" # debug_show(("list", thisItem.list)));
+              };
+            };
+
+            
+            
+            if(Set.has<ListItem>(found.permissions.admin, listItemHash, #Identity(caller))){
+                //cache the record
+                ignore Map.put<Text, NamespaceRecord>(cache, Map.thash, thisItem.list # Principal.toText(caller), found);
+            } else if(Set.has<ListItem>(found.permissions.write, listItemHash, #Identity(caller))) {
+                //cache the record
+                ignore Map.put(cache, Map.thash, thisItem.list # Principal.toText(caller), found);
+            } else if(findIdentityInCollectionList(caller, found.permissions.admin)){
+              ignore Map.put(cache, Map.thash, thisItem.list # Principal.toText(caller), found);
+            } else if(findIdentityInCollectionList(caller, found.permissions.write)){
+              ignore Map.put(cache, Map.thash, thisItem.list # Principal.toText(caller), found);
+            } else{
+              return #Err("Principal does not have correct permissions" # debug_show(("list", thisItem.list, "caller", caller)));
+              results.add(?#Err(#Unauthorized));
+            };
+            
+            found;
+          };
+        };
+
+        
+
+        switch(thisItem.action){
+          case(#Add(val)){
+            descriptionText.add("Add " # debug_show(val) # " to " # debug_show(thisItem.list));
+          };
+          case(#Remove(val)){
+            descriptionText.add("Remove " # debug_show(val) # " to " # debug_show(thisItem.list));
+          };
+        };
+      };
+
+      return #Ok(Text.join("\n", Buffer.toArray<Text>(descriptionText).vals()));
+    };
+
     public func manage_list_properties(caller: Principal, request: ManageListPropertyRequest, canChange: CanChangeProperty) : async* ManageListPropertyResponse {
 
       ensureTT<system>();
@@ -1278,6 +1342,109 @@ module {
       };
       
       return Buffer.toArray(results);
+    };
+
+
+    //Note: This does not validate for custom logic held in the canUpdate function
+    public func validate_manage_list_properties(caller: Principal, request: ManageListPropertyRequest) : async* {
+      #Ok: Text;
+      #Err: Text;
+    } {
+
+      if(request.size() > state.metadata.maxUpdate){
+        return #Err("Too many Requests");
+      };
+
+      //check permissions
+      let cache = Map.new<Text, NamespaceRecord>();
+      let cachePermissions = Map.new<Text, NamespaceRecord>();
+      let descriptionText = Buffer.Buffer<Text>(1);
+      
+      label proc for(thisItem in request.vals()){
+
+        let actionText =switch(thisItem.action){
+          case(#Create(_)){
+             "Create";
+          };
+          case(#Rename(_)){
+             "Rename";
+          };
+          case(#Delete){
+             "Delete";
+          };
+          case(#Metadata(_)){
+             "Update Metadata";
+          };
+          case(#ChangePermissions(_)){
+             "Change Permission";
+          };
+        };
+
+        //check permissions
+        let search = if(actionText == "Change Permission"){
+          switch(Map.get(cachePermissions, Map.thash, thisItem.list # Principal.toText(caller))){
+            case(null){
+              Map.get(cache, Map.thash, thisItem.list # Principal.toText(caller))
+            };
+            case(?cacheItem) ?cacheItem;
+            };
+        } else {
+          Map.get(cache, Map.thash, thisItem.list # Principal.toText(caller))
+        };
+
+        if(actionText != "Create"){
+          let foundCache = switch(search){
+            case(?cacheItem) cacheItem;
+            case(null){
+              let found = switch(BTree.get(state.namespaceStore, Text.compare, thisItem.list)){
+                case(?record) record;
+                case(null) {
+                  return #Err("Cannot find List " # debug_show(("list", thisItem.list)));
+                  continue proc;
+                };
+              };
+              
+              if(Set.has<ListItem>(found.permissions.admin, listItemHash, #Identity(caller))){
+                  //cache the record
+                  ignore Map.put<Text,NamespaceRecord>(cache, Map.thash, thisItem.list # Principal.toText(caller), found);
+              } else if(Set.has<ListItem>(found.permissions.permissions, listItemHash, #Identity(caller))) {
+                  //cache the record
+                  ignore Map.put(cachePermissions, Map.thash, thisItem.list # Principal.toText(caller), found);
+              } else if(findIdentityInCollectionList(caller, found.permissions.admin)){
+                ignore Map.put<Text,NamespaceRecord>(cache, Map.thash, thisItem.list # Principal.toText(caller), found);
+              } else if(findIdentityInCollectionList(caller, found.permissions.permissions)){
+                ignore Map.put<Text,NamespaceRecord>(cachePermissions, Map.thash, thisItem.list # Principal.toText(caller), found);
+              } else {
+                //check action for permission
+                return #Err("Principal does not have correct permissions" # debug_show(("list", thisItem.list, "caller", caller, "action", actionText, thisItem.action)));
+              };
+              
+              found;
+            };
+          };
+        };
+
+        
+        switch(thisItem.action){
+          case(#Create(val)){
+            descriptionText.add("Create list " # thisItem.list # " with admin and metadata " #debug_show(val));
+          };
+          case(#Rename(val)){
+            descriptionText.add("Rename list " # thisItem.list # " to " # val);
+          };
+          case(#Delete){
+            descriptionText.add("Delete list " # thisItem.list);
+          };
+          case(#Metadata(val)){
+            descriptionText.add("Update metadata for list " # thisItem.list # " with " # debug_show(val));
+          };
+          case(#ChangePermissions(val)){
+            descriptionText.add("Change permissions for list " # thisItem.list # " with " # debug_show(val));
+          };
+        };
+      };
+      
+      return #Ok(Text.join("\n", Buffer.toArray<Text>(descriptionText).vals()));
     };
 
     ignore environment.icrc10_register_supported_standards({

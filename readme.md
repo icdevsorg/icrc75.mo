@@ -120,6 +120,8 @@ let isMember = ICRC75.is_member(caller, [(#Identity(caller), [[]])]);
 - `accountToValue(acc: Account) : Value`
 - `manage_list_membership(caller: Principal, request: ManageListMembershipRequest, canChange: CanChangeMembership) : async* ManageListMembershipResponse`
 - `manage_list_properties(caller: Principal, request: ManageListPropertyRequest, canChange: CanChangeProperty) : async* ManageListPropertyResponse`
+- `validate_manage_list_membership(caller: Principal, request: ManageListMembershipRequest) : async* SNSValidationResponse`
+- `validate_manage_list_properties(caller: Principal, request: ManageListPropertyRequest) : async* SNSValidationResponse`
 - `get_lists(caller: Principal, filter: ?Text, bMetadata: Bool, prev: ?List, take: ?Nat) : [ListRecord]`
 - `findIdentityInList(principal: Principal, list: Text) : Bool`
 - `get_list_members_admin(caller: Principal, namespace: Text, prev: ?ListItem, take: ?Nat) : [ListItem]`
@@ -129,6 +131,7 @@ let isMember = ICRC75.is_member(caller, [(#Identity(caller), [[]])]);
 - `is_member(caller: Principal, request: [AuthorizedRequestItem]) : [Bool]`
 - `request_token<system>(caller: Principal, item: ListItem, list: List, exp: ?Nat)`
 - `query retrieve_token(caller: Principal, token : IdentityToken ) : IdentityCertificate`
+
 
 ## Data Structures
 
@@ -228,6 +231,12 @@ The ICRC-75 implementation provides a token system that enables the attestation 
    ```
 
 The token system allows for flexible and secure attestation of membership, enabling integration with external systems that require proof of membership in a decentralized manner.
+
+## Governance Helpers
+
+The `validate_manage_list_membership` and `validate_manage_list_properties` functions are provided as helpers for you to easily set up administration of your ICRC-75 lists from an SNS or custom DAO.  Calling these functions will provide the standard `SNSValidationResponse` telling the SNS if it the DAO is authorized to call the function via the SNS' governance canister.
+
+Note: It does not take into account custom validation as set up in your canUpdate interceptors. You will need to write the code to check these once you have finished processing the base permissions.
 
 ## ICRC-75 Standard
 
