@@ -266,11 +266,7 @@ export const idlFactory = ({ IDL }) => {
     'Exists' : IDL.Null,
   });
   const ManageListMembershipResult = IDL.Opt(
-    IDL.Variant({
-      'Ok' : TransactionID,
-      'Err' : ManageListMembershipError,
-      'TooManyRequests' : IDL.Null,
-    })
+    IDL.Variant({ 'Ok' : TransactionID, 'Err' : ManageListMembershipError })
   );
   const ManageListMembershipResponse = IDL.Vec(ManageListMembershipResult);
   const ManageListPropertyRequestAction = IDL.Variant({
