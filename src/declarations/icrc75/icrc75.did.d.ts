@@ -170,8 +170,7 @@ export interface ManageListMembershipRequestItem {
 export type ManageListMembershipResponse = Array<ManageListMembershipResult>;
 export type ManageListMembershipResult = [] | [
   { 'Ok' : TransactionID } |
-    { 'Err' : ManageListMembershipError } |
-    { 'TooManyRequests' : null }
+    { 'Err' : ManageListMembershipError }
 ];
 export type ManageListPropertyError = { 'TooManyRequests' : null } |
   { 'IllegalAdmin' : null } |

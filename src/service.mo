@@ -124,7 +124,6 @@ module {
 
   public type ManageListMembershipResult = ?{
     #Ok : TransactionID;
-    #TooManyRequests;
     #Err : ManageListMembershipError;
   };
 

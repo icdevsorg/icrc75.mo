@@ -229,12 +229,10 @@ type ManageListPropertyError =
    Unauthorized;
  };
 type ManageListMembershipResult = 
- opt
-  variant {
-    Err: ManageListMembershipError;
-    Ok: TransactionID;
-    TooManyRequests;
-  };
+ opt variant {
+       Err: ManageListMembershipError;
+       Ok: TransactionID;
+     };
 type ManageListMembershipResponse = vec ManageListMembershipResult;
 type ManageListMembershipRequestItem = 
  record {

@@ -12,7 +12,8 @@ const config: Config = {
     '^.+\\.(ts|tsx|js|jsx)$': 'babel-jest',
   },
   maxWorkers: 1,
-  testPathIgnorePatterns: ["/node_modules/", "/frontend/", "/scratch_tests/"],
+  testPathIgnorePatterns: ["<rootDir>/.mops/","<rootDir>/node_modules/", "<rootDir>/web/", "<rootDir>/scratch_tests/"],
+  modulePathIgnorePatterns: ["<rootDir>/.mops/"],
   moduleFileExtensions: ['ts', 'tsx', 'js', 'jsx', 'json', 'node'],
 
 };

@@ -83,7 +83,7 @@ import {DataItemMap,  DataItem } from '../src/declarations/icrc75/icrc75.did.js'
 
   let valid = parseMetadata(metadataStr, bAlert);
 
-  console.log("got a valid", valid,metadataStr);
+  console.log("got a valid", valid, metadataStr);
 
   if (!valid) {
     if (bAlert) {
@@ -255,6 +255,8 @@ export function parseMetadata(metadataStr: string, bAlert: boolean): boolean {
         aMap.push([key, { Text: items[key] }]);
       }
     } */
+
+      console.log("items from parser", items);
     
     let valid = validateValue({ Map : items});
     
