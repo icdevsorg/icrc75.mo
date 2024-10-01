@@ -1,23 +1,26 @@
 import { describe, it, expect, vi } from 'vitest';
-import { validateMetadata } from '../utils';
+import { validateMetadata, dataItemReviver, dataItemStringify } from '../utils';
 
 describe('validateMetadata', () => {
   it('should return a valid DataItemMap for valid metadata string', () => {
     const validMetadataStr = JSON.stringify([
       ["key1", { Text: "value1" }],
-      ["key2", { Int: 123 }],
+      ["key2", { Int: 123n }],
       ["key3", { Bool: true }],
-      ["key4", { Blob: "aabbcc" }]
-    ]);
+      ["key4", { Blob: Uint8Array.from([0xaa, 0xbb, 0xcc]) }]
+    ], dataItemStringify);
 
     console.log('validMetadataStr', validMetadataStr);
 
     const result = validateMetadata(validMetadataStr, false);
+
+    console.log('result', result);
+
     expect(result).toEqual([
       ["key1", { Text: "value1" }],
-      ["key2", { Int: 123 }],
+      ["key2", { Int: 123n }],
       ["key3", { Bool: true }],
-      ["key4", { Blob: "aabbcc" }]
+      ["key4", { Blob: Uint8Array.from([0xaa, 0xbb, 0xcc]) }]
     ]);
   });
 
