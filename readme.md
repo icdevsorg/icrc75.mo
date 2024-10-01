@@ -3,18 +3,6 @@
 
 This repository contains the implementation of the ICRC-75 standard, a minimal membership standard for the Internet Computer. The ICRC-75 standard enables the management of composable identity lists, facilitating secure and flexible group structures with various permissions.
 
-## Table of Contents
-
-- [Overview](#overview)
-- [Features](#features)
-- [Getting Started](#getting-started)
-- [Usage](#usage)
-- [API Reference](#api-reference)
-- [Data Structures](#data-structures)
-- [ICRC-75 Standard](#icrc-75-standard)
-- [Contributing](#contributing)
-- [License](#license)
-
 ## Overview
 
 The ICRC-75 standard provides a framework for creating and managing identity lists on the Internet Computer. These lists can include identities, accounts, other lists, and unstructured data items, allowing for complex, hierarchical group structures. Permissions can be assigned to control access and modifications to these lists.
@@ -263,3 +251,21 @@ We welcome contributions to improve the ICRC-75 implementation. Please submit is
 ## License
 
 This project is licensed under the MIT License.
+
+## OVS Default Behavior
+
+This motoko class has a default OVS behavior that sends cycles to the developer to provide funding for maintenance and continued development. In accordance with the OVS specification and ICRC85, this behavior may be overridden by another OVS sharing heuristic or turned off. We encourage all users to implement some form of OVS sharing as it helps us provide quality software and support to the community.
+
+Default behavior: 1 XDR per 10000 list actions processed per month up to 100 XDR;
+
+Default Beneficiary: ICDevs.org
+
+Dependent Libraries: 
+ - https://mops.one/timer-tool
+
+
+## AstroFlora
+
+![AstroFlora](AF.png "AstroFlora" )
+
+....coming soon....

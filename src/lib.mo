@@ -312,7 +312,7 @@ module {
     public func updateProperties<system>(caller : Principal, request: ManageRequest) : ManageResponse{
 
       //make sure tt is set
-      ignore ensureTT<system>();
+      ensureTT<system>();
       if(request.size() > state.metadata.maxUpdate){
         return [?#Err(#TooManyRequests)];
       };
