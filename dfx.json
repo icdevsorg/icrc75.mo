@@ -17,6 +17,16 @@
       "main": "src/Canisters/example.mo",
       "type": "motoko"
     },
+    "icrc75prod": {
+      "dependencies": [],
+      "args": "--incremental-gc --release",
+      "main": "src/Canisters/example.mo",
+      "type": "motoko",
+      "gzip": true,
+      "declarations": {
+        "node_compatibility": true
+      }
+    },
     "nns-cycles-minting": {
       "build": "",
       "candid": "candid/nns-cycles-minting.did",

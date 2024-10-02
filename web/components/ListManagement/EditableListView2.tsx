@@ -156,7 +156,7 @@ const EditableListView: React.FC<EditableListViewProps> = ({
       try{
         let result = await icrc75Reader.icrc75_manage_list_properties(commandList);
         if(result && result[0] && result[0][0] && "Ok" in result[0][0] && result[0][0].Ok){
-          alert('List metadata updated successfully! Transaction ID: ' + result[0][0].Ok.toString());
+          //alert('List metadata updated successfully! Transaction ID: ' + result[0][0].Ok.toString());
         } else {
           alert('Error updating metadata: ' + JSON.stringify(result));
         };
@@ -431,7 +431,7 @@ const EditableListView: React.FC<EditableListViewProps> = ({
 
       const result = await icrc75Reader.icrc75_manage_list_properties(commandList);
       if (result && result[0] && result[0][0] && "Ok" in result[0][0] && result[0][0].Ok) {
-        alert('List renamed successfully! Transaction ID: ' + result[0][0].Ok.toString());
+        //alert('List renamed successfully! Transaction ID: ' + result[0][0].Ok.toString());
         // Optionally, update the current component's state or notify the parent
       } else {
         alert('Error renaming list: ' + JSON.stringify(result));
@@ -462,7 +462,7 @@ const EditableListView: React.FC<EditableListViewProps> = ({
 
       const result = await icrc75Reader.icrc75_manage_list_properties(commandList);
       if (result && result[0] && result[0][0] && "Ok" in result[0][0] && result[0][0].Ok) {
-        alert('List deleted successfully! Transaction ID: ' + result[0][0].Ok.toString());
+        //alert('List deleted successfully! Transaction ID: ' + result[0][0].Ok.toString());
         // Optionally, redirect the user or update the parent component
       } else {
         alert('Error deleting list: ' + JSON.stringify(result));

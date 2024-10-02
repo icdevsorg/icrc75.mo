@@ -49,6 +49,7 @@ interface EditableListViewProps {
   metadata: DataItemMap | null;
   yourPrincipal: Principal; // Current user's principal
   onUpdateMetadata?: (metadata: DataItemMap) => void;
+  onListsChange?: () => void;
 }
 
 const EditableListView: React.FC<EditableListViewProps> = ({
@@ -56,7 +57,8 @@ const EditableListView: React.FC<EditableListViewProps> = ({
   listName,
   metadata,
   yourPrincipal,
-  onUpdateMetadata
+  onUpdateMetadata,
+  onListsChange
 }) => {
   const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<string>('');
@@ -84,6 +86,14 @@ const EditableListView: React.FC<EditableListViewProps> = ({
   // Confirmation Dialog for Removing Member
   const [openConfirm, setOpenConfirm] = useState<boolean>(false);
   const [memberToRemove, setMemberToRemove] = useState<ListItem | null>(null);
+
+  // Handle renaming the list
+  const [renameListName, setRenameListName] = useState<string>(listName);
+  const [renaming, setRenaming] = useState<boolean>(false);
+
+  // Handle deleting the list
+  const [openDeleteConfirm, setOpenDeleteConfirm] = useState<boolean>(false);
+  const [deleting, setDeleting] = useState<boolean>(false);
 
   useEffect(() => {
     const fetchListDetails = async () => {
@@ -146,7 +156,7 @@ const EditableListView: React.FC<EditableListViewProps> = ({
       try {
         let result = await icrc75Reader.icrc75_manage_list_properties(commandList);
         if(result && result[0] && result[0][0] && "Ok" in result[0][0] && result[0][0].Ok){
-          alert('List metadata updated successfully! Transaction ID: ' + result[0][0].Ok.toString());
+          //alert('List metadata updated successfully! Transaction ID: ' + result[0][0].Ok.toString());
           setEditMetadata(newMetadataString);
         } else {
           alert('Error updating metadata: ' + JSON.stringify(result));
@@ -251,6 +261,7 @@ const EditableListView: React.FC<EditableListViewProps> = ({
       setNewListName('');
       setNewDataItemValue('');
     } catch (err) {
+      setLoading(false);
       console.error('Error adding member:', err);
       setError('Failed to add member.');
     }
@@ -290,6 +301,7 @@ const EditableListView: React.FC<EditableListViewProps> = ({
       setOpenConfirm(false);
       setMemberToRemove(null);
     } catch (err) {
+      setLoading(false);
       console.error('Error removing member:', err);
       setError('Failed to remove member.');
       setOpenConfirm(false);
@@ -381,6 +393,7 @@ const EditableListView: React.FC<EditableListViewProps> = ({
       setPermissionTarget('');
       setPermissionType('Read');
     } catch (err) {
+      setLoading(false);
       console.error('Error adding permission:', err);
       setAddPermissionError('Failed to add permission.');
     }
@@ -445,6 +458,7 @@ const EditableListView: React.FC<EditableListViewProps> = ({
       setLoading(false);
 
     } catch (err) {
+      setLoading(false);
       console.error('Error adding permission:', err);
       setAddPermissionError('Failed to add permission.');
     }
@@ -496,8 +510,84 @@ const EditableListView: React.FC<EditableListViewProps> = ({
       setPermissions(updatedPermissions);
       setLoading(false);
     } catch (err) {
+      setLoading(false);
       console.error('Error changing permissions:', err);
       setError('Failed to change permissions.');
+    }
+  };
+
+  // Handle renaming the list
+  const handleRenameList = async () => {
+    if (renameListName.trim() === "") {
+      setError("List name cannot be empty.");
+      return;
+    }
+
+    if (renameListName === listName) {
+      setError("New list name is the same as the current name.");
+      return;
+    }
+
+    try {
+      setRenaming(true);
+      const commandList: ManageListPropertyRequest = [
+        {
+          list: listName,
+          memo: [], // Optional: provide if needed
+          from_subaccount: [], // Optional: provide if needed
+          created_at_time: [], // Optional: provide if needed
+          action: {
+            Rename: renameListName,
+          },
+        },
+      ];
+
+      const result = await icrc75Reader.icrc75_manage_list_properties(commandList);
+      if (result && result[0] && result[0][0] && "Ok" in result[0][0] && result[0][0].Ok) {
+        //('List renamed successfully! Transaction ID: ' + result[0][0].Ok.toString());
+        // Optionally, update the current component's state or notify the parent
+        if(onListsChange) onListsChange();
+      } else {
+        alert('Error renaming list: ' + JSON.stringify(result));
+      }
+    } catch (err) {
+      console.error('Error renaming list:', err);
+      setError('Failed to rename list.');
+    } finally {
+      setRenaming(false);
+    }
+  };
+
+  // Handle deleting the list
+  const handleDeleteList = async () => {
+    try {
+      setDeleting(true);
+      const commandList: ManageListPropertyRequest = [
+        {
+          list: listName,
+          memo: [], // Optional: provide if needed
+          from_subaccount: [], // Optional: provide if needed
+          created_at_time: [], // Optional: provide if needed
+          action: {
+            Delete: null, // Delete action doesn't require additional data
+          },
+        },
+      ];
+
+      const result = await icrc75Reader.icrc75_manage_list_properties(commandList);
+      if (result && result[0] && result[0][0] && "Ok" in result[0][0] && result[0][0].Ok) {
+        //alert('List deleted successfully! Transaction ID: ' + result[0][0].Ok.toString());
+        if(onListsChange) onListsChange();
+        // Optionally, redirect the user or update the parent component
+      } else {
+        alert('Error deleting list: ' + JSON.stringify(result));
+      }
+    } catch (err) {
+      console.error('Error deleting list:', err);
+      setError('Failed to delete list.');
+    } finally {
+      setDeleting(false);
+      setOpenDeleteConfirm(false);
     }
   };
 
@@ -534,6 +624,44 @@ const EditableListView: React.FC<EditableListViewProps> = ({
         <Box sx={{ mt: 2 }}>
           <Button variant="contained" color="primary" onClick={handleSaveMetadata}>
             Save Metadata
+          </Button>
+        </Box>
+      </Box>
+
+      {/* Rename List */}
+      <Box sx={{ mt: 4 }}>
+        <Typography variant="subtitle1">Rename List:</Typography>
+        <Box sx={{ display: 'flex', alignItems: 'center', mt: 1 }}>
+          <TextField
+            label="New List Name"
+            variant="outlined"
+            value={renameListName}
+            onChange={(e) => setRenameListName(e.target.value)}
+            sx={{ mr: 2, flexGrow: 1 }}
+          />
+          <Button 
+            variant="contained" 
+            color="secondary" 
+            onClick={handleRenameList} 
+            disabled={renaming}
+          >
+            {renaming ? 'Renaming...' : 'Rename'}
+          </Button>
+        </Box>
+      </Box>
+
+      {/* Delete List */}
+      <Box sx={{ mt: 2 }}>
+        <Typography variant="subtitle1">Delete List:</Typography>
+        <Box sx={{ mt: 1 }}>
+          <Button 
+            variant="outlined" 
+            color="error" 
+            startIcon={<DeleteIcon />} 
+            onClick={() => setOpenDeleteConfirm(true)}
+            disabled={deleting}
+          >
+            {deleting ? 'Deleting...' : 'Delete List'}
           </Button>
         </Box>
       </Box>
@@ -887,16 +1015,7 @@ const EditableListView: React.FC<EditableListViewProps> = ({
         </DialogActions>
       </Dialog>
 
-      {/* Button to Open Add Permission Dialog */}
-      <Box sx={{ mt: 2 }}>
-        <Button
-          variant="outlined"
-          startIcon={<AddIcon />}
-          onClick={() => setOpenAddPermission(true)}
-        >
-          Assign Permission
-        </Button>
-      </Box>
+      
     </Box>
   );
 };

@@ -345,19 +345,11 @@ const EditableListView: React.FC<EditableListViewProps> = ({
 
       // Refresh members after adding
       setLoading(true);
-      const updatedMembers: ListItem[] = await icrc75Reader.icrc75_get_list_members_admin(
-        listName,
-        [], // No specific filters
-        []
-      );
-
-      // Fetch updated permissions
-      const updatedPermissions: PermissionList = await icrc75Reader.icrc75_get_list_permissions_admin(
-        listName,
-        [], // No specific filters
-        [],
-        []
-      );
+      const [updatedMembers, updatedPermissions] = await Promise.all([
+        icrc75Reader.icrc75_get_list_members_admin(listName, [], []),
+        icrc75Reader.icrc75_get_list_permissions_admin(listName, [], [],[])
+      ]);
+      
 
       // Map to membersWithPermissions
       const updatedMembersWithPer: MemberWithPermissions[] = updatedMembers.map((member) => {
@@ -378,6 +370,7 @@ const EditableListView: React.FC<EditableListViewProps> = ({
       setNewDataItemValue('');
       setNewMemberPermission('Read');
     } catch (err) {
+      setLoading(false);
       console.error('Error adding member:', err);
       setError('Failed to add member.');
     }
@@ -443,19 +436,11 @@ const EditableListView: React.FC<EditableListViewProps> = ({
 
       // Refresh members after removal
       setLoading(true);
-      const updatedMembers: ListItem[] = await icrc75Reader.icrc75_get_list_members_admin(
-        listName,
-        [], // No specific filters
-        []
-      );
-
-      // Fetch updated permissions
-      const updatedPermissions: PermissionList = await icrc75Reader.icrc75_get_list_permissions_admin(
-        listName,
-        [], // No specific filters
-        [],
-        []
-      );
+      const [updatedMembers, updatedPermissions] = await Promise.all([
+        icrc75Reader.icrc75_get_list_members_admin(listName, [], []),
+        icrc75Reader.icrc75_get_list_permissions_admin(listName, [], [], [])
+      ]);
+      
 
       // Map to membersWithPermissions
       const updatedMembersWithPer: MemberWithPermissions[] = updatedMembers.map((member) => {
@@ -474,6 +459,7 @@ const EditableListView: React.FC<EditableListViewProps> = ({
       console.error('Error removing member:', err);
       setError('Failed to remove member.');
       setOpenConfirm(false);
+      setLoading(false);
     }
   };
 
@@ -576,6 +562,7 @@ const EditableListView: React.FC<EditableListViewProps> = ({
 
       setMembersWithPermissions(updatedMembersWithPer);
     } catch (err) {
+      setLoading(false);
       console.error('Error updating permission:', err);
       setError('Failed to update permission.');
     }
