@@ -3,7 +3,7 @@ import type { Identity } from '@dfinity/agent';
 import { Ed25519KeyIdentity } from '@dfinity/identity';
 import { verifyCertification, validateTree } from './ver';
 import { HttpAgent, compare, lookup_path, Certificate, Cbor, HashTree } from '@dfinity/agent';
-import {hash_val, big_endian_encode, equalBuffers} from './repindy.ts';
+import {hash_val, big_endian_encode, equalBuffers} from './repindy';
 
 
 import { IDL } from "@dfinity/candid";

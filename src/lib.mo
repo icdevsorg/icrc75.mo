@@ -24,6 +24,8 @@ import RepIndy "mo:rep-indy-hash";
 import Migration "./migrations";
 import MigrationTypes "./migrations/types";
 
+import ClassPlus "mo:class-plus";
+
 
 import Service "./service";
 
@@ -137,6 +139,8 @@ module {
 
   public let listItemHash = MigrationTypes.Current.listItemHash;
 
+
+
   /// #class ICRC75
   /// Initializes the state of the ICRC75 class.
   /// - Parameters:
@@ -147,11 +151,12 @@ module {
   public class ICRC75(stored: ?State, canister: Principal, environment: Environment){
 
     let debug_channel= {
-      announce = true;
-      queryItem = true;
-      managemember = true;
-      managelist = true;
-      certificate = true;
+      var announce = true;
+      var queryItem = true;
+      var managemember = true;
+      var managelist = true;
+      var certificate = true;
+      var timerTool = true;
     };
 
     debug if(debug_channel.announce) {
@@ -179,6 +184,8 @@ module {
         foundState;
       };
     };
+
+
 
     
 
@@ -379,6 +386,22 @@ module {
         tt = query_tt().getStats();
         //todo: return timer-tool stats
         
+      };
+    };
+
+    private func query_tt() : TT.TimerTool {
+      switch(tt_){
+        case(?val) val;
+        case(null){
+          debug if(debug_channel.announce) D.print("No timer tool set up");
+          let foundClass = switch(environment.tt){
+            case(?val) val;
+            case(null){
+              D.trap("No timer tool yet");
+            };
+          };
+          foundClass;
+        };
       };
     };
 
@@ -2636,23 +2659,18 @@ module {
 
     };
 
+  private func reportTTExecution(execInfo: TT.ExecutionReport): Bool{
+    debug if(debug_channel.timerTool) D.print("CANISTER: TimerTool Execution: " # debug_show(execInfo));
+    return false;
+  };
+
+  private func reportTTError(errInfo: TT.ErrorReport) : ?Nat{
+    debug if(debug_channel.timerTool) D.print("CANISTER: TimerTool Error: " # debug_show(errInfo));
+    return null;
+  };
+
     private var tt_ : ?TT.TimerTool = null;
 
-    private func query_tt() : TT.TimerTool {
-      switch(tt_){
-        case(?val) val;
-        case(null){
-          debug if(debug_channel.announce) D.print("No timer tool set up");
-          let foundClass = switch(environment.tt){
-            case(?val) val;
-            case(null){
-              D.trap("No timer tool yet");
-            };
-          };
-          foundClass;
-        };
-      };
-    };
 
     private func tt<system>() : TT.TimerTool {
       switch(tt_){
@@ -2662,37 +2680,49 @@ module {
           let foundClass = switch(environment.tt){
             case(?val){
               tt_ := ?val;
-              val;
+              val : TT.TimerTool;
             };
             case(null){
               //todo: recover from existing state?
-              let timerState = switch(state.tt){
-                case(null) TT.init(TT.initialState(),#v0_1_0(#id), null, canister);
-                case(?val) TT.init(val,#v0_1_0(#id), null, canister);
-              };
 
-              state.tt := ?timerState;
+              let initManager = ClassPlus.ClassPlusInitializationManager(state.owner, canister, true);
 
               
 
-       
-                let x = TT.TimerTool(?timerState, canister, {
-                  advanced = switch(environment.advanced){
-                    case(?val) {?{
-                        icrc85 = ?val.icrc85
-                      };
-                    };
-                    case(null) null;
+              let local_tt  = TT.Init<system>({
+                manager = initManager;
+                initialState = switch(state.tt){
+                  case(null) TT.initialState();
+                  case(val) switch(val){
+                    case(?val) val;
+                    case(null) TT.initialState();
                   };
-                  reportError = null;
-                  reportExecution = null;
-                  syncUnsafe = null;
-                  reportBatch = null;
+                };
+                args = null;
+                pullEnvironment = ?(func() : TT.Environment {
+                  {      
+                    advanced = null;
+                    reportExecution = ?reportTTExecution;
+                    reportError = ?reportTTError;
+                    syncUnsafe = null;
+                    reportBatch = null;
+                  };
                 });
-                tt_ := ?x;
-                x;
-      
+
+                onInitialize = ?(func (newClass: TT.TimerTool) : async* () {
+                  D.print("Initializing TimerTool");
+                  newClass.initialize<system>();
+                  //do any work here necessary for initialization
+                });
+                onStorageChange = func(a_state: TT.State) {
+                  state.tt := ?a_state;
+                }
+              });
+
+              tt_ := ?(local_tt() : TT.TimerTool);
+              local_tt();
             };
+            
           };
           
 
