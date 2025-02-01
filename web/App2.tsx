@@ -271,6 +271,8 @@ function App() {
     setOpenDialog(false);
   };
 
+  
+
   const handleChangeCanisterId = async () => {
     // Basic Validation
     try {
@@ -302,6 +304,27 @@ function App() {
           <IconButton aria-label="edit canister id" onClick={handleOpenDialog}>
             <EditIcon />
           </IconButton>
+        </Box>
+
+        <Box sx={{ display: 'flex',  mb: 2 }}>
+          <Button 
+            onClick={(e) => setCurrentCanisterId("nn7ao-eiaaa-aaaap-akjoq-cai")} 
+            color="secondary">
+              Load ICRC75 Demo
+          </Button>
+          <Button onClick={(e) => setCurrentCanisterId("wujau-jyaaa-aaaae-qajxq-cai")} 
+            color="secondary">
+              Load Whitelist Demo 1
+          </Button>
+          <Button onClick={(e) => setCurrentCanisterId("e3rbx-iyaaa-aaaac-ah2bq-cai")} 
+            color="secondary">
+              Load Whitelist Demo 2
+          </Button>
+        </Box>
+        <Box sx={{ display: 'flex',  mb: 2 }}>
+          <Typography variant="body1" sx={{ mt: 1 }}>
+            To Test the White List Demo, you can send some amount of ICP to e9dc3bbbcb45479709e8ef512f6c8a66d6593cbb1b8621ff9cdbde917d6da9aa. Within a minute or so you will be on the alpha tester list and your alpha contribution will be recorded.
+          </Typography>
         </Box>
 
         {/* Canister ID Change Dialog */}
