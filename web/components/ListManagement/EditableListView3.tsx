@@ -64,7 +64,7 @@ const EditableListView: React.FC<EditableListViewProps> = ({
   const [error, setError] = useState<string>('');
   const [editMetadata, setEditMetadata] = useState<string>('');
   const [permissions, setPermissions] = useState<PermissionList | null>(null);
-  const [members, setMembers] = useState<ListItem[] | null>(null);
+  const [members, setMembers] = useState<[ListItem, [] | [DataItemMap]][] | null>(null);
   
   // Member Management States
   const [openAddMember, setOpenAddMember] = useState<boolean>(false);
@@ -109,7 +109,7 @@ const EditableListView: React.FC<EditableListViewProps> = ({
         setPermissions(foundPermissions);
 
         // Fetch members
-        const foundMembers: ListItem[] = await icrc75Reader.icrc75_get_list_members_admin(
+        const foundMembers = await icrc75Reader.icrc75_get_list_members_admin(
           listName,
           [], // No specific filters
           []
@@ -238,7 +238,7 @@ const EditableListView: React.FC<EditableListViewProps> = ({
         from_subaccount: [], // Optional: provide if needed
         created_at_time: [], // Optional: provide if needed
         action: {
-          Add: newListItem,
+          Add: [newListItem,[]],
         },
       }];
 
@@ -246,7 +246,7 @@ const EditableListView: React.FC<EditableListViewProps> = ({
 
       // Refresh members after adding
       setLoading(true);
-      const updatedMembers: ListItem[] = await icrc75Reader.icrc75_get_list_members_admin(
+      const updatedMembers = await icrc75Reader.icrc75_get_list_members_admin(
         listName,
         [], // No specific filters
         []
@@ -290,7 +290,7 @@ const EditableListView: React.FC<EditableListViewProps> = ({
 
       // Refresh members after removal
       setLoading(true);
-      const updatedMembers: ListItem[] = await icrc75Reader.icrc75_get_list_members_admin(
+      const updatedMembers = await icrc75Reader.icrc75_get_list_members_admin(
         listName,
         [], // No specific filters
         []
@@ -684,6 +684,7 @@ const EditableListView: React.FC<EditableListViewProps> = ({
               <TableRow>
                 <TableCell><strong>Type</strong></TableCell>
                 <TableCell><strong>Identifier</strong></TableCell>
+                <TableCell><strong>Metadata</strong></TableCell>
                 <TableCell><strong>Actions</strong></TableCell>
               </TableRow>
             </TableHead>
@@ -691,35 +692,38 @@ const EditableListView: React.FC<EditableListViewProps> = ({
               {members && members.length > 0 ? (
                 members.map((member, index) => {
                   const identifier =
-                    'Identity' in member
-                      ? member['Identity'].toString()
-                      : 'Account' in member
-                      ? `${member['Account'].owner.toString()}.${member['Account'].subaccount[0] ? Buffer.from(member['Account'].subaccount[0]).toString('hex') : 'No Subaccount'}`
-                      : 'List' in member
-                      ? member['List']
-                      : 'DataItem' in member
-                      ? JSON.stringify(member['DataItem'], dataItemStringify, 2)
+                    'Identity' in member[0]
+                      ? member[0]['Identity'].toString()
+                      : 'Account' in member[0]
+                      ? `${member[0]['Account'].owner.toString()}.${member[0]['Account'].subaccount[0] ? Buffer.from(member[0]['Account'].subaccount[0]).toString('hex') : 'No Subaccount'}`
+                      : 'List' in member[0]
+                      ? member[0]['List']
+                      : 'DataItem' in member[0]
+                      ? JSON.stringify(member[0]['DataItem'], dataItemStringify, 2)
                       : 'Unknown';
+
+                    const memberMetadata = member[1] && member[1].length > 0 ? JSON.stringify(member[1][0], dataItemStringify, 2) : null;
 
                   return (
                     <TableRow key={index}>
                       <TableCell>
-                        {'Identity' in member
+                        {'Identity' in member[0]
                           ? 'Identity'
-                          : 'Account' in member
+                          : 'Account' in member[0]
                           ? 'Account'
-                          : 'List' in member
+                          : 'List' in member[0]
                           ? 'List'
-                          : 'DataItem' in member
+                          : 'DataItem' in member[0]
                           ? 'DataItem'
                           : 'Unknown'}
                       </TableCell>
                       <TableCell>{identifier}</TableCell>
+                      <TableCell>{memberMetadata}</TableCell>
                       <TableCell>
                         <IconButton
                           aria-label="delete"
                           color="secondary"
-                          onClick={() => handleRemoveMember(member)}
+                          onClick={() => handleRemoveMember(member[0])}
                         >
                           <DeleteIcon />
                         </IconButton>

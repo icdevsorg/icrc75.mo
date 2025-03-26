@@ -18,7 +18,7 @@ export interface Action {
 }
 export type ActionDetail = [ActionId, Action];
 export interface ActionId { 'id' : bigint, 'time' : Time }
-export type AuthorizedRequestItem = [ListItem__2, Array<Array<List__2>>];
+export type AuthorizedRequestItem = [ListItem__3, Array<Array<List__2>>];
 export type CandyShared = { 'Int' : bigint } |
   { 'Map' : Array<[string, CandyShared]> } |
   { 'Nat' : bigint } |
@@ -99,6 +99,58 @@ export type DataItem__1 = { 'Int' : bigint } |
 export interface ICRC10Record { 'url' : string, 'name' : string }
 export type ICRC16Map = Array<ICRC16MapItem>;
 export type ICRC16MapItem = [string, DataItem];
+export interface ICRC75List {
+  'auto_init' : ActorMethod<[], undefined>,
+  'deposit_cycles' : ActorMethod<[], undefined>,
+  'getLedger' : ActorMethod<[], Array<Value__1>>,
+  'get_cycle_balance' : ActorMethod<[], bigint>,
+  'icrc10_supported_standards' : ActorMethod<[], Array<ICRC10Record>>,
+  'icrc75_get_list_lists' : ActorMethod<
+    [List__1, [] | [List__1], [] | [bigint]],
+    Array<List__1>
+  >,
+  'icrc75_get_list_members_admin' : ActorMethod<
+    [List__1, [] | [ListItem__2], [] | [bigint]],
+    Array<ListItem__2>
+  >,
+  'icrc75_get_list_permissions_admin' : ActorMethod<
+    [
+      List__1,
+      [] | [Permission__1],
+      [] | [PermissionListItem__1],
+      [] | [bigint],
+    ],
+    PermissionList__1
+  >,
+  'icrc75_get_lists' : ActorMethod<
+    [[] | [string], boolean, [] | [List__1], [] | [bigint]],
+    Array<ListRecord>
+  >,
+  'icrc75_get_stats' : ActorMethod<[], Stats>,
+  'icrc75_is_member' : ActorMethod<
+    [Array<AuthorizedRequestItem>],
+    Array<boolean>
+  >,
+  'icrc75_manage' : ActorMethod<[ManageRequest], ManageResponse>,
+  'icrc75_manage_list_membership' : ActorMethod<
+    [ManageListMembershipRequest],
+    ManageListMembershipResponse
+  >,
+  'icrc75_manage_list_properties' : ActorMethod<
+    [ManageListPropertyRequest],
+    ManageListPropertyResponse
+  >,
+  'icrc75_member_of' : ActorMethod<
+    [ListItem__2, [] | [List__1], [] | [bigint]],
+    Array<List__1>
+  >,
+  'icrc75_metadata' : ActorMethod<[], DataItemMap>,
+  'icrc75_request_token' : ActorMethod<
+    [ListItem__2, List__1, [] | [bigint]],
+    IdentityRequestResult
+  >,
+  'icrc75_retrieve_token' : ActorMethod<[IdentityToken], IdentityCertificate>,
+}
 export type Identity = Principal;
 export interface IdentityCertificate {
   'token' : IdentityToken__1,
@@ -124,13 +176,11 @@ export type IdentityToken__1 = { 'Int' : bigint } |
   { 'Text' : string } |
   { 'Array' : Array<Value> };
 export type Identity__1 = Principal;
-export type InitArgs = [] | [
-  {
-    'existingNamespaces' : [] | [Array<NamespaceRecordShared>],
-    'cycleShareTimerID' : [] | [bigint],
-    'certificateNonce' : [] | [bigint],
-  }
-];
+export interface InitArgs {
+  'existingNamespaces' : [] | [Array<NamespaceRecordShared>],
+  'cycleShareTimerID' : [] | [bigint],
+  'certificateNonce' : [] | [bigint],
+}
 export type List = string;
 export type ListItem = { 'List' : List } |
   { 'DataItem' : DataItem } |
@@ -140,7 +190,11 @@ export type ListItem__1 = { 'List' : List } |
   { 'DataItem' : DataItem } |
   { 'Account' : Account } |
   { 'Identity' : Identity };
-export type ListItem__2 = { 'List' : List__2 } |
+export type ListItem__2 = { 'List' : List } |
+  { 'DataItem' : DataItem } |
+  { 'Account' : Account } |
+  { 'Identity' : Identity };
+export type ListItem__3 = { 'List' : List__2 } |
   { 'DataItem' : DataItem__1 } |
   { 'Account' : Account__1 } |
   { 'Identity' : Identity__1 };
@@ -150,8 +204,11 @@ export interface ListRecord {
 }
 export type List__1 = string;
 export type List__2 = string;
-export type ManageListMembershipAction = { 'Add' : ListItem__2 } |
-  { 'Remove' : ListItem__2 };
+export type ManageListMembershipAction = {
+    'Add' : [ListItem__3, [] | [DataItemMap__1]]
+  } |
+  { 'Remove' : ListItem__3 } |
+  { 'Update' : [ListItem__3, MapModifier] };
 export type ManageListMembershipError = { 'TooManyRequests' : null } |
   { 'NotFound' : null } |
   { 'Unauthorized' : null } |
@@ -186,18 +243,18 @@ export type ManageListPropertyRequestAction = {
   { 'Rename' : string } |
   {
     'ChangePermissions' : {
-        'Read' : { 'Add' : ListItem__2 } |
-          { 'Remove' : ListItem__2 }
+        'Read' : { 'Add' : ListItem__3 } |
+          { 'Remove' : ListItem__3 }
       } |
-      { 'Write' : { 'Add' : ListItem__2 } | { 'Remove' : ListItem__2 } } |
-      { 'Admin' : { 'Add' : ListItem__2 } | { 'Remove' : ListItem__2 } } |
-      { 'Permissions' : { 'Add' : ListItem__2 } | { 'Remove' : ListItem__2 } }
+      { 'Write' : { 'Add' : ListItem__3 } | { 'Remove' : ListItem__3 } } |
+      { 'Admin' : { 'Add' : ListItem__3 } | { 'Remove' : ListItem__3 } } |
+      { 'Permissions' : { 'Add' : ListItem__3 } | { 'Remove' : ListItem__3 } }
   } |
   { 'Delete' : null } |
   {
     'Create' : {
-      'members' : Array<ListItem__2>,
-      'admin' : [] | [ListItem__2],
+      'members' : Array<[ListItem__3, [] | [DataItemMap__1]]>,
+      'admin' : [] | [ListItem__3],
       'metadata' : DataItemMap__1,
     }
   };
@@ -226,9 +283,10 @@ export type ManageResult = [] | [
 export type ManageResultError = { 'TooManyRequests' : null } |
   { 'Unauthorized' : null } |
   { 'Other' : string };
+export type MapModifier = [string, [] | [DataItem__1]];
 export interface NamespaceRecordShared {
   'permissions' : PermissionList,
-  'members' : Array<ListItem>,
+  'members' : Array<[ListItem, [] | [ICRC16Map]]>,
   'metadata' : ICRC16Map,
   'namespace' : string,
 }
@@ -237,9 +295,9 @@ export type Permission = { 'Read' : null } |
   { 'Admin' : null } |
   { 'Permissions' : null };
 export type PermissionList = Array<PermissionListItem>;
-export type PermissionListItem = [Permission, ListItem];
-export type PermissionListItem__1 = [Permission__2, ListItem__2];
-export type PermissionListItem__2 = [Permission__2, ListItem__2];
+export type PermissionListItem = [Permission, ListItem__1];
+export type PermissionListItem__1 = [Permission__2, ListItem__3];
+export type PermissionListItem__2 = [Permission__2, ListItem__3];
 export type PermissionList__1 = Array<PermissionListItem__2>;
 export type Permission__1 = { 'Read' : null } |
   { 'Write' : null } |
@@ -285,58 +343,6 @@ export type Subaccount = Uint8Array | number[];
 export type Subaccount__1 = Uint8Array | number[];
 export type Time = bigint;
 export type TimerId = bigint;
-export interface Token {
-  'auto_init' : ActorMethod<[], undefined>,
-  'deposit_cycles' : ActorMethod<[], undefined>,
-  'getLedger' : ActorMethod<[], Array<Value__1>>,
-  'get_cycle_balance' : ActorMethod<[], bigint>,
-  'icrc10_supported_standards' : ActorMethod<[], Array<ICRC10Record>>,
-  'icrc75_get_list_lists' : ActorMethod<
-    [List__1, [] | [List__1], [] | [bigint]],
-    Array<List__1>
-  >,
-  'icrc75_get_list_members_admin' : ActorMethod<
-    [List__1, [] | [ListItem__1], [] | [bigint]],
-    Array<ListItem__1>
-  >,
-  'icrc75_get_list_permissions_admin' : ActorMethod<
-    [
-      List__1,
-      [] | [Permission__1],
-      [] | [PermissionListItem__1],
-      [] | [bigint],
-    ],
-    PermissionList__1
-  >,
-  'icrc75_get_lists' : ActorMethod<
-    [[] | [string], boolean, [] | [List__1], [] | [bigint]],
-    Array<ListRecord>
-  >,
-  'icrc75_get_stats' : ActorMethod<[], Stats>,
-  'icrc75_is_member' : ActorMethod<
-    [Array<AuthorizedRequestItem>],
-    Array<boolean>
-  >,
-  'icrc75_manage' : ActorMethod<[ManageRequest], ManageResponse>,
-  'icrc75_manage_list_membership' : ActorMethod<
-    [ManageListMembershipRequest],
-    ManageListMembershipResponse
-  >,
-  'icrc75_manage_list_properties' : ActorMethod<
-    [ManageListPropertyRequest],
-    ManageListPropertyResponse
-  >,
-  'icrc75_member_of' : ActorMethod<
-    [ListItem__1, [] | [List__1], [] | [bigint]],
-    Array<List__1>
-  >,
-  'icrc75_metadata' : ActorMethod<[], DataItemMap>,
-  'icrc75_request_token' : ActorMethod<
-    [ListItem__1, List__1, [] | [bigint]],
-    IdentityRequestResult
-  >,
-  'icrc75_retrieve_token' : ActorMethod<[IdentityToken], IdentityCertificate>,
-}
 export type TransactionID = bigint;
 export type Value = { 'Int' : bigint } |
   { 'Map' : Array<[string, Value]> } |
@@ -356,6 +362,6 @@ export type Value__1 = { 'Int' : bigint } |
   { 'Blob' : Uint8Array | number[] } |
   { 'Text' : string } |
   { 'Array' : Array<ValueShared> };
-export interface _SERVICE extends Token {}
+export interface _SERVICE extends ICRC75List {}
 export declare const idlFactory: IDL.InterfaceFactory;
 export declare const init: (args: { IDL: typeof IDL }) => IDL.Type[];

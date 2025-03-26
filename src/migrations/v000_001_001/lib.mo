@@ -1,5 +1,5 @@
 import MigrationTypes "../types";
-import v0_1_0 "types";
+import v0_1_1 "types";
 
 import D "mo:base/Debug";
 import Text "mo:base/Text";
@@ -12,11 +12,11 @@ import BTree "mo:stableheapbtreemap/BTree";
 
 module {
 
-  public func upgrade(prev_migration_state: MigrationTypes.State, args: MigrationTypes.Args, caller: Principal): MigrationTypes.State {
+  public func upgrade(prev_migration_state: MigrationTypes.State, args: ?MigrationTypes.Args, caller: Principal): MigrationTypes.State {
 
     let oldState = switch (prev_migration_state) { case (#v0_1_0(#data(state))) state; case (_) D.trap("Unexpected migration state") };
 
-    let state : MigrationTypes.Current.State = {
+    let state : v0_1_1.State = {
       var certificateNonce = 0;
       var cycleShareTimerID = null;
       namespaceStore = oldState.namespaceStore;
@@ -34,8 +34,6 @@ module {
       };
       var tt = oldState.tt;
     };
-
-    
 
     return #v0_1_1(#data(state));
   };

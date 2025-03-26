@@ -35,35 +35,6 @@ type Value =
    Text: text;
  };
 type TransactionID = nat;
-type Token = 
- service {
-   auto_init: () -> ();
-   deposit_cycles: () -> ();
-   getLedger: () -> (vec Value__1) query;
-   get_cycle_balance: () -> (nat) query;
-   icrc10_supported_standards: () -> (vec ICRC10Record) query;
-   icrc75_get_list_lists: (List__1, opt List__1, opt nat) ->
-    (vec List__1) query;
-   icrc75_get_list_members_admin: (List__1, opt ListItem__1, opt nat) ->
-    (vec ListItem__1) query;
-   icrc75_get_list_permissions_admin: (List__1, opt Permission__1,
-    opt PermissionListItem__1, opt nat) -> (PermissionList__1) query;
-   icrc75_get_lists: (opt text, bool, opt List__1, opt nat) ->
-    (vec ListRecord) query;
-   icrc75_get_stats: () -> (Stats) query;
-   icrc75_is_member: (vec AuthorizedRequestItem) -> (vec bool) query;
-   icrc75_manage: (ManageRequest) -> (ManageResponse);
-   icrc75_manage_list_membership: (ManageListMembershipRequest) ->
-    (ManageListMembershipResponse);
-   icrc75_manage_list_properties: (ManageListPropertyRequest) ->
-    (ManageListPropertyResponse);
-   icrc75_member_of: (ListItem__1, opt List__1, opt nat) ->
-    (vec List__1) query;
-   icrc75_metadata: () -> (DataItemMap) query;
-   icrc75_request_token: (ListItem__1, List__1, opt nat) ->
-    (IdentityRequestResult);
-   icrc75_retrieve_token: (IdentityToken) -> (IdentityCertificate) query;
- };
 type TimerId = nat;
 type Time = nat;
 type Subaccount__1 = blob;
@@ -122,17 +93,17 @@ type PermissionList__1 = vec PermissionListItem__2;
 type PermissionListItem__2 = 
  record {
    Permission__2;
-   ListItem__2;
+   ListItem__3;
  };
 type PermissionListItem__1 = 
  record {
    Permission__2;
-   ListItem__2;
+   ListItem__3;
  };
 type PermissionListItem = 
  record {
    Permission;
-   ListItem;
+   ListItem__1;
  };
 type PermissionList = vec PermissionListItem;
 type Permission = 
@@ -144,10 +115,18 @@ type Permission =
  };
 type NamespaceRecordShared = 
  record {
-   members: vec ListItem;
+   members: vec record {
+                  ListItem;
+                  opt ICRC16Map;
+                };
    metadata: ICRC16Map;
    namespace: text;
    permissions: PermissionList;
+ };
+type MapModifier = 
+ record {
+   text;
+   opt DataItem__1;
  };
 type ManageResultError = 
  variant {
@@ -188,26 +167,29 @@ type ManageListPropertyRequestAction =
    ChangePermissions:
     variant {
       Admin: variant {
-               Add: ListItem__2;
-               Remove: ListItem__2;
+               Add: ListItem__3;
+               Remove: ListItem__3;
              };
       Permissions: variant {
-                     Add: ListItem__2;
-                     Remove: ListItem__2;
+                     Add: ListItem__3;
+                     Remove: ListItem__3;
                    };
       Read: variant {
-              Add: ListItem__2;
-              Remove: ListItem__2;
+              Add: ListItem__3;
+              Remove: ListItem__3;
             };
       Write: variant {
-               Add: ListItem__2;
-               Remove: ListItem__2;
+               Add: ListItem__3;
+               Remove: ListItem__3;
              };
     };
    Create:
     record {
-      admin: opt ListItem__2;
-      members: vec ListItem__2;
+      admin: opt ListItem__3;
+      members: vec record {
+                     ListItem__3;
+                     opt DataItemMap__1;
+                   };
       metadata: DataItemMap__1;
     };
    Delete;
@@ -253,8 +235,15 @@ type ManageListMembershipError =
  };
 type ManageListMembershipAction = 
  variant {
-   Add: ListItem__2;
-   Remove: ListItem__2;
+   Add: record {
+          ListItem__3;
+          opt DataItemMap__1;
+        };
+   Remove: ListItem__3;
+   Update: record {
+             ListItem__3;
+             MapModifier;
+           };
  };
 type List__2 = text;
 type List__1 = text;
@@ -263,12 +252,19 @@ type ListRecord =
    list: List__2;
    metadata: opt DataItemMap__1;
  };
-type ListItem__2 = 
+type ListItem__3 = 
  variant {
    Account: Account__1;
    DataItem: DataItem__1;
    Identity: Identity__1;
    List: List__2;
+ };
+type ListItem__2 = 
+ variant {
+   Account: Account;
+   DataItem: DataItem;
+   Identity: Identity;
+   List: List;
  };
 type ListItem__1 = 
  variant {
@@ -286,12 +282,11 @@ type ListItem =
  };
 type List = text;
 type InitArgs = 
- opt
-  record {
-    certificateNonce: opt nat;
-    cycleShareTimerID: opt nat;
-    existingNamespaces: opt vec NamespaceRecordShared;
-  };
+ record {
+   certificateNonce: opt nat;
+   cycleShareTimerID: opt nat;
+   existingNamespaces: opt vec NamespaceRecordShared;
+ };
 type Identity__1 = principal;
 type IdentityToken__1 = 
  variant {
@@ -336,6 +331,38 @@ type IdentityCertificate =
    witness: blob;
  };
 type Identity = principal;
+type ICRC75List = 
+ service {
+   auto_init: () -> ();
+   deposit_cycles: () -> ();
+   getLedger: () -> (vec Value__1) query;
+   get_cycle_balance: () -> (nat) query;
+   icrc10_supported_standards: () -> (vec ICRC10Record) query;
+   icrc75_get_list_lists: (List__1, opt List__1, opt nat) ->
+    (vec List__1) query;
+   icrc75_get_list_members_admin: (List__1, opt ListItem__2, opt nat) ->
+    (vec record {
+           ListItem__2;
+           opt DataItemMap;
+         }) query;
+   icrc75_get_list_permissions_admin: (List__1, opt Permission__1,
+    opt PermissionListItem__1, opt nat) -> (PermissionList__1) query;
+   icrc75_get_lists: (opt text, bool, opt List__1, opt nat) ->
+    (vec ListRecord) query;
+   icrc75_get_stats: () -> (Stats) query;
+   icrc75_is_member: (vec AuthorizedRequestItem) -> (vec bool) query;
+   icrc75_manage: (ManageRequest) -> (ManageResponse);
+   icrc75_manage_list_membership: (ManageListMembershipRequest) ->
+    (ManageListMembershipResponse);
+   icrc75_manage_list_properties: (ManageListPropertyRequest) ->
+    (ManageListPropertyResponse);
+   icrc75_member_of: (ListItem__2, opt List__1, opt nat) ->
+    (vec List__1) query;
+   icrc75_metadata: () -> (DataItemMap) query;
+   icrc75_request_token: (ListItem__2, List__1, opt nat) ->
+    (IdentityRequestResult);
+   icrc75_retrieve_token: (IdentityToken) -> (IdentityCertificate) query;
+ };
 type ICRC16MapItem = 
  record {
    text;
@@ -458,7 +485,7 @@ type CandyShared =
  };
 type AuthorizedRequestItem = 
  record {
-   ListItem__2;
+   ListItem__3;
    vec vec List__2;
  };
 type ActionId = 
@@ -488,4 +515,4 @@ type Account =
    owner: principal;
    subaccount: opt Subaccount;
  };
-service : (InitArgs) -> Token
+service : (opt InitArgs) -> ICRC75List

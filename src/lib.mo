@@ -21,10 +21,14 @@ import ovsfixed "mo:ovs-fixed";
 import Star "mo:star/star";
 import RepIndy "mo:rep-indy-hash";
 
-import Migration "./migrations";
+import MigrationLib "./migrations";
 import MigrationTypes "./migrations/types";
 
-import ClassPlus "mo:class-plus";
+import ClassPlusLib "mo:class-plus";
+import Vector "mo:vector";
+import ICRC16 "mo:candy/types";
+import ICRC16Conversion "mo:candy/icrc16/conversion";
+import Value "mo:cbor/Value";
 
 
 import Service "./service";
@@ -98,6 +102,8 @@ module {
   public type ManageListPropertyResponse = MigrationTypes.Current.ManageListPropertyResponse;
   public type ManageListPropertyResult = MigrationTypes.Current.ManageListPropertyResult;
   public type ManageListPropertyError = MigrationTypes.Current.ManageListPropertyError;
+  public type DataItemMap = MigrationTypes.Current.DataItemMap;
+  public type DataItemMapItem = MigrationTypes.Current.DataItemMapItem;
 
 
   /// # `initialState`
@@ -123,7 +129,9 @@ module {
   /// ## Value
   ///
   /// `#v0_1_0(#id)`: A unique identifier representing the version of the  state format currently in use, as defined by the `State` data type.
-  public let currentStateVersion = #v0_1_1(#id);
+  public let Migration = MigrationLib;
+  public let currentStateVersion = #v0_2_0(#id);
+  public let init = Migration.migrate;
 
   public let migrate = Migration.migrate;
   
@@ -131,13 +139,39 @@ module {
   public let Set = MigrationTypes.Current.Set;
 
   public let BTree = MigrationTypes.Current.BTree;
-
   public let Vector = MigrationTypes.Current.Vector;
 
-  public let ICRC16 = MigrationTypes.Current.ICRC16;
-  public let ICRC16Conversion = MigrationTypes.Current.ICRC16Conversion;
+ 
 
   public let listItemHash = MigrationTypes.Current.listItemHash;
+
+
+  public func Init<system>(config : {
+    manager: ClassPlusLib.ClassPlusInitializationManager;
+    initialState: State;
+    args : ?InitArgs;
+    pullEnvironment : ?(() -> Environment);
+    onInitialize: ?(ICRC75 -> async*());
+    onStorageChange : ((State) ->())
+  }) :()-> ICRC75{
+
+    D.print("Subscriber Init");
+    switch(config.pullEnvironment){
+      case(?val) {
+        D.print("pull environment has value");
+        
+      };
+      case(null) {
+        D.print("pull environment is null");
+      };
+    };  
+    ClassPlusLib.ClassPlus<system,
+      ICRC75, 
+      State,
+      InitArgs,
+      Environment>({config with constructor = ICRC75}).get;
+  };
+
 
 
 
@@ -148,7 +182,7 @@ module {
   ///     - canister: `Principal` - The principal of the canister where this class is used.
   ///     - environment: `Environment` - The environment settings for various ICRC standards-related configurations.
   /// - Returns: No explicit return value as this is a class constructor function.
-  public class ICRC75(stored: ?State, canister: Principal, environment: Environment){
+  public class ICRC75(stored: ?State, caller: Principal, canister: Principal, args: ?InitArgs, environment_passed: ?Environment, storageChanged: (State) -> ()){
 
     let debug_channel= {
       var announce = true;
@@ -159,9 +193,26 @@ module {
       var timerTool = true;
     };
 
-    debug if(debug_channel.announce) {
-      D.print(debug_show(("ICRC75 initializing", canister)));
+    public var vecLog = Vector.new<Text>();
+
+    private func d(doLog : Bool, message: Text) {
+      if(doLog){
+        Vector.add(vecLog, Nat.toText(Int.abs(Time.now())) # " " # message);
+        if(Vector.size(vecLog) > 5000){
+          vecLog := Vector.new<Text>();
+        };
+        D.print(message);
+      };
     };
+
+    let environment = switch(environment_passed){
+      case(?val) val;
+      case(null) {
+        D.trap("Environment is required");
+      };
+    };
+
+    debug d(debug_channel.announce, debug_show(("ICRC75 initializing", canister)));
 
     /// # State
     ///
@@ -176,21 +227,22 @@ module {
     /// ```
     var state : CurrentState = switch(stored){
       case(null) {
-        let #v0_1_1(#data(foundState)) = migrate(initialState(),currentStateVersion, null, canister);
+        debug d(debug_channel.announce, debug_show(("ICRC75 initializing with initialState")));
+        let #v0_2_0(#data(foundState)) = init(initialState(), currentStateVersion, args, caller);
         foundState;
       };
       case(?val) {
-        let #v0_1_1(#data(foundState)) = migrate(val, currentStateVersion, null, canister);
+        let #v0_2_0(#data(foundState)) = init(val, currentStateVersion, args, caller);
         foundState;
       };
     };
 
 
 
-    
+    storageChanged(#v0_2_0(#data(state)));
 
-    public func init<system>() : () {
-      debug if(debug_channel.announce)  D.print(debug_show(("ICRC75 in init starting timer tool")));
+    public func initTimer<system>() : () {
+      debug d(debug_channel.announce, debug_show(("ICRC75 in init starting timer tool")));
       ensureTT<system>();
     };
 
@@ -234,7 +286,7 @@ module {
 
     //events
     ///MARK: Listeners
-    private let membershipChangeListeners = Vector.new<(Text,MembershipChangeListener )>();
+    private let membershipChangeListeners = Vector.new<(Text, MembershipChangeListener )>();
     private let propertyChangeListeners = Vector.new<(Text, PropertyChangeListener)>();
 
 
@@ -306,7 +358,7 @@ module {
           result;
         };
       };
-      debug if(debug_channel.announce) D.print(debug_show(("ensureTT", haveTimer)));
+      debug d(debug_channel.announce, debug_show(("ensureTT", haveTimer)));
       if(haveTimer == true){
         ignore tt<system>();
       };
@@ -324,7 +376,7 @@ module {
         return [?#Err(#TooManyRequests)];
       };
       state.icrc85.activeActions := state.icrc85.activeActions + 1;
-
+      ignore ensureCycleShare<system>();
       if(state.owner != caller){
         return [?#Err(#Unauthorized)];
       };
@@ -393,7 +445,7 @@ module {
       switch(tt_){
         case(?val) val;
         case(null){
-          debug if(debug_channel.announce) D.print("No timer tool set up");
+          debug d(debug_channel.announce, "No timer tool set up");
           let foundClass = switch(environment.tt){
             case(?val) val;
             case(null){
@@ -418,8 +470,8 @@ module {
       return #Array(Vector.toArray(vec));
     };
 
-    private func fileMember(member : MigrationTypes.Current.ListItem, record: NamespaceRecord) : () {
-      Set.add(record.members, listItemHash, member);
+    private func fileMember(member : MigrationTypes.Current.ListItem, metadata : ?MigrationTypes.Current.ICRC16Map, record: NamespaceRecord) : () {
+      ignore Map.add(record.members, listItemHash, member, metadata);
       let found = switch(Map.get(state.memberIndex, listItemHash, member)){
           case(?val) val;
           case(null){
@@ -433,7 +485,7 @@ module {
     };
 
     private func removeMember(member : MigrationTypes.Current.ListItem, record: NamespaceRecord) : () {
-      Set.delete(record.members, listItemHash, member);
+      Map.delete(record.members, listItemHash, member);
       let found = switch(Map.get(state.memberIndex, listItemHash, member)){
           case(?val) val;
           case(null) return;
@@ -446,14 +498,14 @@ module {
 
   
 
-    public func manage_list_membership(caller: Principal, request: ManageListMembershipRequest, canChange: CanChangeMembership) : async* ManageListMembershipResponse {
+    public func manage_list_membership(caller: Principal, request: Service.ManageListMembershipRequest, canChange: CanChangeMembership) : async* ManageListMembershipResponse {
 
       ensureTT<system>();
       if(request.size() > state.metadata.maxUpdate){
         return [?#Err(#TooManyRequests)];
       };
       state.icrc85.activeActions := state.icrc85.activeActions + 1;
-
+      ignore ensureCycleShare<system>();
       //check permissions
       let cache = Map.new<Text, NamespaceRecord>();
 
@@ -491,24 +543,96 @@ module {
           };
         };
 
-        let (val, actionText) =switch(thisItem.action){
+        let (listItem : ListItem, metadata : ?MigrationTypes.Current.DataItemMap, modifier : ?MigrationTypes.Current.MapModifier, actionText: Text) = switch(thisItem.action){
           case(#Add(val)){
-             (val,"add");
+             (val.0, val.1, null, "add");
           };
           case(#Remove(val)){
-            (val,"remove");
+            (val, null, null, "remove");
+          };
+          case(#Update(val)){
+            (val.0,null, ?val.1, "remove");
           };
         };
 
         if(actionText == "add"){
-          if(Set.has(foundCache.members, listItemHash, val)){
-            results.add(?#Err(#Exists));
-            continue proc;
+          switch(Map.get(foundCache.members, listItemHash, listItem)){
+            case(?val){
+              results.add(?#Err(#Exists));
+              continue proc;
+            };
+            case(null){};
           };
-        } else {
-          if(Set.has(foundCache.members, listItemHash, val) ==false){
-            results.add(?#Err(#NotFound));
-            continue proc;
+        } else if(actionText == "remove"){ 
+          switch(Map.get(foundCache.members, listItemHash, listItem)){
+            case(null){
+              results.add(?#Err(#NotFound));
+              continue proc;
+            };
+            case(?val){};
+          };
+        } else if(actionText == "update"){
+          switch(Map.get(foundCache.members, listItemHash, listItem)){
+            case(null){
+              results.add(?#Err(#NotFound));
+              continue proc;
+            };
+            case(?val){
+
+              //check if the modifier is valid
+              switch(modifier){
+                case(?mod){
+                  switch(mod.1){
+                    case(?metadataValue){
+                      //changing or setting the value
+                      switch(val){
+                        case(?oldval){
+                          let newMap = Buffer.Buffer<DataItemMapItem>(oldval.size());
+                          label procLoop for(thisItem in oldval.vals()){
+                            if(thisItem.0 == mod.0){
+                              newMap.add((mod.0, metadataValue));
+                              continue procLoop;
+                            };
+                            newMap.add(thisItem);
+                          };
+                          ignore Map.put(foundCache.members, listItemHash, listItem, ?Buffer.toArray<DataItemMapItem>(newMap));
+                        };
+                        case(null){
+                          //create a new map with this value
+                          let newMap = Buffer.Buffer<DataItemMap>(1);
+                          ignore Map.put(foundCache.members, listItemHash, listItem, ?[(mod.0, metadataValue)]);
+                        };
+                      };
+                    }; //remove the item
+                    case(null){
+                      switch(val){
+                        case(?oldval){
+                          let newMap = Buffer.Buffer<DataItemMapItem>(oldval.size());
+                          label procLoop for(thisItem in oldval.vals()){
+                            if(thisItem.0 == mod.0){
+                              //remove it
+                              continue procLoop;
+                            };
+                            newMap.add(thisItem);
+                          };
+                          if(newMap.size() == 0){
+                            ignore Map.put(foundCache.members, listItemHash, listItem, null);
+                          } else {
+                            ignore Map.put(foundCache.members, listItemHash, listItem, ?Buffer.toArray<DataItemMapItem>(newMap));
+                          };
+                        };
+                        case(null){
+                          results.add(?#Err(#NotFound));
+                          continue proc;
+                        };
+                      };
+                    };
+                  }
+                  
+                };
+                case(null){};
+              };
+            };
           };
         };
 
@@ -534,14 +658,9 @@ module {
         trx.add(("changer", #Blob(Principal.toBlob(caller))));
         trx.add(("list", #Text(thisItem.list)));
 
-        
-  
-
-        
-
-        switch(val){
+        switch(listItem){
           case(#DataItem(di)){
-            trx.add(("dataItem", ICRC16Conversion.CandySharedToValue(di)));
+            trx.add(("dataItem", ICRC16Conversion.candySharedToValue(di)));
           };
           case(#Identity(id)){
             trx.add(("identity", #Blob(Principal.toBlob(id))));
@@ -552,6 +671,28 @@ module {
           case(#List(acc)){
             trx.add(("listItem", #Text(acc)));
           };
+        };
+        switch(metadata){
+          case(?val){
+            
+            trx.add(("metadata", ICRC16Conversion.candySharedToValue(#Map(val))));
+       
+          };
+          case(null){};
+        };
+
+        switch(modifier){
+          case(?val){
+            trx.add(("metadataChange", #Array([#Text(val.0), switch(val.1){
+              case(?val){
+                ICRC16Conversion.candySharedToValue(#Option(?val));
+              };
+              case(null){
+                ICRC16Conversion.candySharedToValue(#Option(null));
+              };
+            }])));
+          };
+          case(null){};
         };
 
         switch(thisItem.from_subaccount){
@@ -599,10 +740,17 @@ module {
         };
 
         if(actionText == "add"){
-          fileMember(val, foundCache);
+          fileMember(listItem, metadata, foundCache);
+        } else if(actionText == "remove") {
+          removeMember(listItem, foundCache);
+          ignore Map.remove(foundCache.members, listItemHash, listItem);
         } else {
-          removeMember(val, foundCache);
-          ignore Set.remove(foundCache.members, listItemHash, val);
+          switch(modifier){
+            case(?mod){
+              
+            };
+            case(null){};
+          };
         };
 
         let trxid = switch(environment.addRecord){
@@ -697,7 +845,7 @@ module {
         return [?#Err(#TooManyRequests)];
       };
       state.icrc85.activeActions := state.icrc85.activeActions + 1;
-
+      ignore ensureCycleShare<system>();
       //check permissions
       let cache = Map.new<Text, NamespaceRecord>();
       let cachePermissions = Map.new<Text, NamespaceRecord>();
@@ -773,9 +921,8 @@ module {
         
         switch(thisItem.action){
           case(#Create(val)){
-            debug if(debug_channel.announce) {
-              D.print(debug_show(("In Create list", thisItem)));
-            };
+            debug d(debug_channel.announce,debug_show(("In Create list", thisItem)));
+            
             switch(BTree.get(state.namespaceStore, Text.compare, thisItem.list)){
               case(?record) {
                 results.add(?#Err(#Exists));
@@ -789,10 +936,40 @@ module {
             trx.add(("creator", #Blob(Principal.toBlob(caller))));
             trx.add(("list", #Text(thisItem.list)));
             if(val.metadata.size() > 0){
-              trx.add(("metadata", ICRC16Conversion.CandySharedToValue(#Map(val.metadata))));
+              trx.add(("metadata", ICRC16Conversion.candySharedToValue(#Map(val.metadata))));
             };
             if(val.members.size() > 0){
-              trx.add(("members", ICRC16Conversion.CandySharedToValue(#Array(listItemsToValue(val.members)))));
+              let listBuffer = Buffer.Buffer<Value>(val.members.size());
+              label listItemsToValue for(thisItem in val.members.vals()){
+                let itemBuffer = Buffer.Buffer<Value>(3);
+                switch(thisItem.0){
+                  case(#DataItem(di)){
+                    itemBuffer.add(#Text("dataItem"));
+                    itemBuffer.add(ICRC16Conversion.candySharedToValue(di));
+                  };
+                  case(#Identity(id)){
+                    itemBuffer.add(#Text("identity"));
+                    itemBuffer.add(#Blob(Principal.toBlob(id)));
+                  };
+                  case(#Account(acc)){
+                    itemBuffer.add(#Text("account"));
+                    itemBuffer.add(accountToValue(acc));
+                  };
+                  case(#List(acc)){
+                    itemBuffer.add(#Text("list"));
+                    itemBuffer.add(#Text(acc));
+                  };
+                };
+
+                switch(thisItem.1){
+                  case(null){};
+                  case(?val){
+                    itemBuffer.add(ICRC16Conversion.candySharedToValue(#Map(val)));
+                  }
+                };
+                listBuffer.add(#Array(listBuffer.toArray()));
+              };
+              trx.add(("members", ICRC16Conversion.candySharedToValue(#Array(listBuffer.toArray()))));
             };
               
            
@@ -836,7 +1013,7 @@ module {
             trx.add(("modifier", #Blob(Principal.toBlob(caller))));
             switch(val.value){
               case(?metadata){
-               trx.add(("metadata", #Map([(val.key, ICRC16Conversion.CandySharedToValue(metadata))])));
+               trx.add(("metadata", #Map([(val.key, ICRC16Conversion.candySharedToValue(metadata))])));
               };
               case(null){
                 trx.add(("metadataDel", #Text(val.key)));
@@ -1067,7 +1244,7 @@ module {
                   };
                 };
               };
-              members = Set.fromIter(val.members.vals(), listItemHash);
+              members = Map.fromIter<ListItem, ?DataItemMap>(val.members.vals(), listItemHash);
               metadata = val.metadata;
             };
             addNamespaceToStore(record);
@@ -1562,12 +1739,15 @@ module {
         return false;
       };
       let ?record = BTree.get(state.namespaceStore, Text.compare, list) else return false;
-      let found = Set.has<ListItem>(record.members, listItemHash, #Identity(principal));
+      let found = switch(Map.get(record.members, listItemHash, #Identity(principal))){
+        case(?val) return true;
+        case(null) false;
+      };
       if(found){
         return true;
       } else {
-        for(thisList in Set.keys<ListItem>(record.members)){
-          switch(thisList){
+        for(thisList in Map.entries(record.members)){
+          switch(thisList.0){
             case(#List(val)){
               if(findIdentityInListDepth(principal, val, depth + 1)){
                 return true;
@@ -1581,9 +1761,7 @@ module {
     };
 
     public func listChain(caller: Principal, list : Text, depth: Nat) : Set.Set<Text>{
-      debug if(debug_channel.announce) {
-        D.print(debug_show(("ListChain", list, depth)));
-      };
+      debug d(debug_channel.announce, debug_show(("ListChain", list, depth)));
       if(depth > 10){
         return Set.new<Text>();
       };
@@ -1596,7 +1774,7 @@ module {
 
         switch(BTree.get(state.namespaceStore, Text.compare, thisItem)){
           case(?record){
-            debug if(debug_channel.queryItem) D.print(debug_show(("Found record", record)));
+            debug d(debug_channel.queryItem, debug_show(("Found record", record)));
             //check permissions
             if(Set.has<ListItem>(record.permissions.admin, listItemHash, #Identity(caller)) == false){
               if(Set.has<ListItem>(record.permissions.read, listItemHash, #Identity(caller)) == false){
@@ -1609,29 +1787,23 @@ module {
             };
           };
           case(null){
-            debug if(debug_channel.queryItem) D.print(debug_show(("Not found record", thisItem)));
+            debug d(debug_channel.queryItem, debug_show(("Not found record", thisItem)));
             continue search;
           };
         };
       };
 
-      debug if(debug_channel.announce) {
-        D.print(debug_show(("ListChain has member index", record)));
-      };
+      debug d(debug_channel.announce, debug_show(("ListChain has member index", record)));
 
       label proc for(thisItem in Set.keys(record)){
         if(Set.has(result, Set.thash, thisItem)){
-          debug if(debug_channel.announce) {
-            D.print(debug_show(("ListChain has member continuing ", thisItem)));
-          };
+          debug d(debug_channel.announce, debug_show(("ListChain has member continuing ", thisItem)));
           continue proc;
         };
         Set.add(result, Set.thash, thisItem);
         for(thisSub in Set.keys(listChain(caller, thisItem, depth + 1)))
         {
-          debug if(debug_channel.announce) {
-            D.print(debug_show(("ListChain has member adding ", thisSub)));
-          };
+          debug d(debug_channel.announce, debug_show(("ListChain has member adding ", thisSub)));
           Set.add(result, Set.thash, thisSub );
         };
       };
@@ -1648,12 +1820,15 @@ module {
         return false;
       };
       let ?record = BTree.get(state.namespaceStore, Text.compare, list) else return false;
-      let found = Set.has<ListItem>(record.members, listItemHash, #List(namespace));
+      let found = switch(Map.get(record.members, listItemHash, #List(namespace))){
+        case(?val) return true;
+        case(null) false;
+      };
       if(found){
         return true;
       } else {
-        for(thisList in Set.keys<ListItem>(record.members)){
-          switch(thisList){
+        for(thisList in Map.entries(record.members)){
+          switch(thisList.0){
             case(#List(val)){
               if(findListInListDepth(namespace, val, depth + 1)){
                 return true;
@@ -1666,7 +1841,7 @@ module {
       return false;
     };
 
-    public func get_list_members_admin(caller: Principal, namespace: Text, prev: ?ListItem, take : ?Nat) : [ListItem]{
+    public func get_list_members_admin(caller: Principal, namespace: Text, prev: ?ListItem, take : ?Nat) : [(ListItem, ?DataItemMap)]{
 
       let ?record = BTree.get(state.namespaceStore, Text.compare, namespace) else return [];
 
@@ -1687,7 +1862,7 @@ module {
         case(_,_,_){};
       };
 
-      let results = Buffer.Buffer<ListItem>(1);
+      let results = Buffer.Buffer<(ListItem, ?DataItemMap)>(1);
 
       var maxTake = switch(take){
         case(?val) val;
@@ -1703,16 +1878,16 @@ module {
         case(null) true;
       };
 
-      label search for(thisItem in Set.keys<ListItem>(record.members)){
+      label search for(thisItem in Map.entries(record.members)){
         if(bFound){
-          results.add(thisItem);
+          results.add((thisItem.0, thisItem.1));
           if(results.size() == maxTake){
             break search;
           };
         } else{
           switch(prev){
             case(?prev){
-              if(listItemHash.1(prev, thisItem)){
+              if(listItemHash.1(prev, thisItem.0)){
                 bFound := true;
               };
             };
@@ -1892,7 +2067,7 @@ module {
     };
 
     public func get_list_lists(caller: Principal, namespace: List, prev: ?List, take : ?Nat) : [List]{
-      debug if(debug_channel.announce) D.print(debug_show(("Get list lists", namespace, prev, take)));
+      debug d(debug_channel.announce, debug_show(("Get list lists", namespace, prev, take)));
       let ?record = BTree.get(state.namespaceStore, Text.compare, namespace) else return [];
 
       switch(
@@ -1928,11 +2103,11 @@ module {
         case(null) true;
       };
 
-      debug if(debug_channel.announce) D.print(debug_show(("Get list lists bFound", bFound, Set.toArray(record.members))));
+      debug d(debug_channel.announce, debug_show(("Get list lists bFound", bFound, Map.toArray(record.members))));
 
-      label search for(thisItem in Set.keys<ListItem>(record.members)){
+      label search for(thisItem in Map.entries(record.members)){
         if(bFound){
-          switch(thisItem){
+          switch(thisItem.0){
             case(#List(val)){
               results.add(val);
               if(results.size() == maxTake){
@@ -1944,10 +2119,10 @@ module {
         } else{
           switch(prev){
             case(?prev){
-              if(listItemHash.1(#List(prev), thisItem)){
+              if(listItemHash.1(#List(prev), thisItem.0)){
                 bFound := true;
               };
-               debug if(debug_channel.announce) D.print(debug_show(("Get list lists bFound now?", bFound)));
+               debug d(debug_channel.announce, debug_show(("Get list lists bFound now?", bFound)));
             };
             case(null){};
           };
@@ -1959,7 +2134,7 @@ module {
     };
 
     public func member_of(caller: Principal, listItem: ListItem, prev: ?List, take : ?Nat) : [List]{
-      debug if(debug_channel.announce) D.print(debug_show(("Member of", listItem)));
+      debug d(debug_channel.announce, debug_show(("Member of", listItem)));
       let results = Buffer.Buffer<List>(1);
 
       var maxTake = switch(take){
@@ -1979,18 +2154,18 @@ module {
       let foundIndex = switch(Map.get(state.memberIndex, listItemHash, listItem)){
         case(?val) val;
         case(null) {
-          debug if(debug_channel.queryItem) D.print(debug_show(("no idex found in ", state.memberIndex)));
+          debug d(debug_channel.queryItem, debug_show(("no idex found in ", state.memberIndex)));
           return [];
         };
       };
 
-      debug if(debug_channel.queryItem) D.print(debug_show(("Found index", foundIndex)));
+      debug d(debug_channel.queryItem, debug_show(("Found index", foundIndex)));
 
       label search for(thisItem in Set.keys(foundIndex)){
 
         switch(BTree.get(state.namespaceStore, Text.compare, thisItem)){
           case(?record){
-            debug if(debug_channel.queryItem) D.print(debug_show(("Found record", record)));
+            debug d(debug_channel.queryItem, debug_show(("Found record", record)));
             //check permissions
             if(Set.has<ListItem>(record.permissions.admin, listItemHash, #Identity(caller)) == false){
               if(Set.has<ListItem>(record.permissions.read, listItemHash, #Identity(caller)) == false){
@@ -2003,7 +2178,7 @@ module {
             };
           };
           case(null){
-            debug if(debug_channel.queryItem) D.print(debug_show(("Not found record", thisItem)));
+            debug d(debug_channel.queryItem, debug_show(("Not found record", thisItem)));
             continue search;
           };
         };
@@ -2012,29 +2187,29 @@ module {
           switch(prev){
             case(?prev){
               if(prev == thisItem){
-                debug if(debug_channel.queryItem) D.print(debug_show(("Found prev", prev)));
+                debug d(debug_channel.queryItem, debug_show(("Found prev", prev)));
                 bFound := true;
               };
             };
             case(null){};
           };
         } else {
-          debug if(debug_channel.queryItem) D.print(debug_show(("Adding record", thisItem)));
+          debug d(debug_channel.queryItem, debug_show(("Adding record", thisItem)));
           results.add(thisItem);
           if(results.size() == maxTake){
-            debug if(debug_channel.queryItem) D.print(debug_show(("Breaking size", results.size())));
+            debug d(debug_channel.queryItem, debug_show(("Breaking size", results.size())));
             break search;
           };
         };
       };
 
-      debug if(debug_channel.queryItem) D.print(debug_show(("Results before sub list", Buffer.toArray(results))));
+      debug d(debug_channel.queryItem, debug_show(("Results before sub list", Buffer.toArray(results))));
 
       for(thisItem in results.vals()){
-        debug if(debug_channel.queryItem) D.print(debug_show(("Checking sub list", thisItem)));
+        debug d(debug_channel.queryItem, debug_show(("Checking sub list", thisItem)));
         //are these lists a member of any other lists
         for(thisSub in Set.keys(listChain(caller, thisItem, 0))){
-          debug if(debug_channel.queryItem) D.print(debug_show(("Adding sub list", thisSub)));
+          debug d(debug_channel.queryItem, debug_show(("Adding sub list", thisSub)));
           results.add(thisSub);
         };
       };
@@ -2045,17 +2220,17 @@ module {
    
 
     public func is_member(caller: Principal, request : [AuthorizedRequestItem]) : [Bool]{
-      debug if(debug_channel.announce) D.print(debug_show(("Is member", request)));
+      debug d(debug_channel.announce, debug_show(("Is member", request)));
       let results = Buffer.Buffer<Bool>(1);
 
       label proc for(thisItem in request.vals()){
-        debug if(debug_channel.queryItem) D.print(debug_show(("Processing item", thisItem)));
+        debug d(debug_channel.queryItem, debug_show(("Processing item", thisItem)));
 
         //get the lists this item is on
         let foundSet = switch(Map.get(state.memberIndex, listItemHash, thisItem.0)){
           case(?val) val;
           case(null) {
-            debug if(debug_channel.queryItem) D.print(debug_show(("Not found", thisItem.0)));
+            debug d(debug_channel.queryItem, debug_show(("Not found", thisItem.0)));
             results.add(false);
             continue proc;
           }
@@ -2073,28 +2248,28 @@ module {
 
         //check the binary check
         label ands for(thisCheck in thisItem.1.vals()){
-          debug if(debug_channel.queryItem) D.print(debug_show(("Processing check ands ", thisCheck)));
+          debug d(debug_channel.queryItem, debug_show(("Processing check ands ", thisCheck)));
           //top levels are anded together
           label ors for(thisOr in thisCheck.vals()){
-            debug if(debug_channel.queryItem) D.print(debug_show(("Processing check ors ", thisOr)));
+            debug d(debug_channel.queryItem, debug_show(("Processing check ors ", thisOr)));
             //or levels are or'd together
             if(Set.has(foundLists, Set.thash, thisOr)){
-              debug if(debug_channel.queryItem) D.print(debug_show(("Found", thisOr)));
+              debug d(debug_channel.queryItem, debug_show(("Found", thisOr)));
               continue ands;
             };
 
             //if we get here, we didn't find it and our or and will fail
-            debug if(debug_channel.queryItem) D.print(debug_show(("Failed", thisOr)));
+            debug d(debug_channel.queryItem, debug_show(("Failed", thisOr)));
             results.add(false);
             continue proc;
           };
         };
         //if we get here then all the ors passed and we can add a true
-        debug if(debug_channel.queryItem) D.print(debug_show(("Passed", thisItem)));
+        debug d(debug_channel.queryItem, debug_show(("Passed", thisItem)));
         results.add(true);
       };
       
-      debug if(debug_channel.queryItem) D.print(debug_show(("Results", Buffer.toArray(results))));
+      debug d(debug_channel.queryItem, debug_show(("Results", Buffer.toArray(results))));
       return Buffer.toArray(results);
     };
 
@@ -2121,7 +2296,7 @@ module {
             };
           };
           case(#DataItem(val)){
-            results.add(ICRC16Conversion.CandySharedToValue(val));
+            results.add(ICRC16Conversion.candySharedToValue(val));
           };
         };
       };
@@ -2213,9 +2388,12 @@ module {
       };
       
       
-      for(thisMember in Set.keys(a.members)){
-        if( Set.has<ListItem>(b.members, listItemHash, thisMember) == false){
-          return false;
+      for(thisMember in Map.keys(a.members)){
+        switch(Map.get(b.members, listItemHash, thisMember)){
+          case(null){
+            return false;
+          };
+          case(?val){};
         };
       };
 
@@ -2240,7 +2418,7 @@ module {
        removePermissionFromIndex(record.namespace, Set.keys(record.permissions.admin));
        removePermissionFromIndex(record.namespace, Set.keys(record.permissions.permissions));
 
-      removeMemberFromIndex(record.namespace, Set.keys(record.members));
+      removeMemberFromIndex(record.namespace, Map.keys(record.members));
       ignore BTree.delete(state.namespaceStore, Text.compare, record.namespace);
     };
 
@@ -2273,12 +2451,12 @@ module {
        addPermissionIndex(record.namespace, thisPermission);
       };
 
-      for(thisMember in Set.keys(record.members)){
-        let found = switch(Map.get(state.memberIndex, listItemHash, thisMember)){
+      for(thisMember in Map.entries(record.members)){
+        let found = switch(Map.get(state.memberIndex, listItemHash, thisMember.0)){
           case(?val) val;
           case(null){
             let newSet = Set.new<Text>();
-            ignore Map.put(state.memberIndex, listItemHash, thisMember, newSet);
+            ignore Map.put(state.memberIndex, listItemHash, thisMember.0, newSet);
             newSet;
           };
         };
@@ -2340,7 +2518,7 @@ module {
           };
         };
         case(#DataItem(val)){
-          ("dataItem", ICRC16Conversion.CandySharedToValue(val));
+          ("dataItem", ICRC16Conversion.candySharedToValue(val));
         };
       };
     };
@@ -2353,7 +2531,7 @@ module {
       //getList
 
       let ?thisList = BTree.get(state.namespaceStore, Text.compare, list) else {
-        debug if(debug_channel.certificate) D.print("List not found");
+        debug d(debug_channel.certificate, "List not found");
         return #Err(#NotFound);
       };
 
@@ -2382,7 +2560,7 @@ module {
                   case(null){?assignedMax};
                   case(?val){
                     if(val > assignedMax){
-                      debug if(debug_channel.certificate) D.print("Exp too long");
+                      debug d(debug_channel.certificate, "Exp too long");
                        return #Err(#ExpirationError);
                     } else {
                       ?assignedMax;
@@ -2422,7 +2600,7 @@ module {
       let nonceUsed = state.certificateNonce;
       
 
-      let token : ICRC16.ValueShared = ICRC16Conversion.CandySharedToValue(#Map(switch(expToUse){
+      let token : ICRC16.ValueShared = ICRC16Conversion.candySharedToValue(#Map(switch(expToUse){
         case(null){
           [
             itemMapItem,
@@ -2449,7 +2627,7 @@ module {
       switch(environment.get_certificate_store){
         
         case(?gcs){
-          debug if(debug_channel.certificate) D.print("have store" # debug_show(gcs()));
+          debug d(debug_channel.certificate, "have store" # debug_show(gcs()));
           let store = gcs();
           let ct = CertTree.Ops(store);
           ct.put([Text.encodeUtf8("icrc75:certs"), encodeBigEndian(state.certificateNonce)], Blob.fromArray(RepIndy.hash_val(token)));
@@ -2458,7 +2636,7 @@ module {
 
           switch(environment.updated_certification){
             case(?uc){
-              debug if(debug_channel.certificate) D.print("have cert update");
+              debug d(debug_channel.certificate, "have cert update");
               ignore uc(store);
             };
             case(_){};
@@ -2541,7 +2719,7 @@ module {
             witness = witness;
             certificate = switch(CertifiedData.getCertificate()){
               case(null){
-                debug if(debug_channel.certificate) D.print("certified returned null");
+                debug d(debug_channel.certificate, "certified returned null");
                 D.trap("certified returned null");
               };
               case(?val) val;
@@ -2584,9 +2762,24 @@ module {
       Int.abs(Time.now());
     };
 
+    ///////////
+    // ICRC85 ovs
+    //////////
+
+    private var _icrc85init = false;
+
+    private func ensureCycleShare<system>() : (){
+      if(_icrc85init == true) return;
+      _icrc85init := true;
+
+      ignore Timer.setTimer<system>(#nanoseconds(OneDay), scheduleCycleShare);
+
+      tt<system>().registerExecutionListenerAsync(?"icrc85:ovs:shareaction:icrc75", handleIcrc85Action : TT.ExecutionAsyncHandler);
+    };
+
     private func scheduleCycleShare<system>() : async() {
       //check to see if it already exists
-      debug if(debug_channel.announce) D.print("in schedule cycle share");
+      debug d(debug_channel.announce, "in schedule cycle share");
       switch(state.icrc85.nextCycleActionId){
         case(?val){
           switch(Map.get(tt<system>().getState().actionIdIndex, Map.nhash, val)){
@@ -2617,30 +2810,32 @@ module {
     };
 
     private func shareCycles<system>() : async*(){
-      debug if(debug_channel.announce) D.print("in share cycles ");
+      debug d(debug_channel.announce, "in share cycles ");
       let lastReportId = switch(state.icrc85.lastActionReported){
         case(?val) val;
         case(null) 0;
       };
 
-      debug if(debug_channel.announce) D.print("last report id " # debug_show(lastReportId));
+      debug d(debug_channel.announce, "last report id " # debug_show(lastReportId));
 
       let actions = if(state.icrc85.activeActions > 0){
         state.icrc85.activeActions;
       } else {1;};
 
-      debug if(debug_channel.announce) D.print("actions " # debug_show(actions));
+      debug d(debug_channel.announce, "actions " # debug_show(actions));
+
+      state.icrc85.activeActions := 0;
 
       var cyclesToShare = 1_000_000_000_000; //1 XDR
 
       if(actions > 0){
         let additional = Nat.div(actions, 10000);
-        debug if(debug_channel.announce) D.print("additional " # debug_show(additional));
+        debug d(debug_channel.announce, "additional " # debug_show(additional));
         cyclesToShare := cyclesToShare + (additional * 1_000_000_000_000);
         if(cyclesToShare > 100_000_000_000_000) cyclesToShare := 100_000_000_000_000;
       };
 
-      debug if(debug_channel.announce) D.print("cycles to share" # debug_show(cyclesToShare));
+      debug d(debug_channel.announce, "cycles to share" # debug_show(cyclesToShare));
 
       try{
         await* ovsfixed.shareCycles<system>({
@@ -2654,18 +2849,18 @@ module {
           cycles = cyclesToShare;
         });
       } catch(e){
-        debug if (debug_channel.announce) D.print("error sharing cycles" # Error.message(e));
+        debug d(debug_channel.announce, "error sharing cycles" # Error.message(e));
       };
 
     };
 
   private func reportTTExecution(execInfo: TT.ExecutionReport): Bool{
-    debug if(debug_channel.timerTool) D.print("CANISTER: TimerTool Execution: " # debug_show(execInfo));
+    debug d(debug_channel.timerTool, "CANISTER: TimerTool Execution: " # debug_show(execInfo));
     return false;
   };
 
   private func reportTTError(errInfo: TT.ErrorReport) : ?Nat{
-    debug if(debug_channel.timerTool) D.print("CANISTER: TimerTool Error: " # debug_show(errInfo));
+    debug d(debug_channel.timerTool, "CANISTER: TimerTool Error: " # debug_show(errInfo));
     return null;
   };
 
@@ -2685,7 +2880,7 @@ module {
             case(null){
               //todo: recover from existing state?
 
-              let initManager = ClassPlus.ClassPlusInitializationManager(state.owner, canister, true);
+              let initManager = ClassPlusLib.ClassPlusInitializationManager(state.owner, canister, true);
 
               
 
@@ -2727,7 +2922,7 @@ module {
           
 
           foundClass.registerExecutionListenerAsync(?"icrc85:ovs:shareaction:icrc75", handleIcrc85Action : TT.ExecutionAsyncHandler);
-          debug if(debug_channel.announce) D.print("Timer tool set up");
+          debug d(debug_channel.announce, "Timer tool set up");
           ignore Timer.setTimer<system>(#nanoseconds(OneDay), scheduleCycleShare);
 
           foundClass;

@@ -7,6 +7,8 @@ import Text "mo:base/Text";
 import Timer "mo:base/Timer";
 import CertTree "mo:ic-certification/CertTree";
 import Candid "mo:candy/candid";
+import ClassPlus "mo:class-plus";
+import D "mo:base/Debug";
 
 
 
@@ -14,12 +16,16 @@ import Candid "mo:candy/candid";
 import ICRC75 "..";
 import Service "../service"
 
-shared ({ caller = _owner }) actor class Token  (
-    init_args75 : ICRC75.InitArgs
+shared ({ caller = _originalCaller }) actor class ICRC75List  (
+    init_args75 : ?ICRC75.InitArgs
 ) = this{
 
-   let Set = ICRC75.Set;
-   let Vector = ICRC75.Vector;
+  let Set = ICRC75.Set;
+  let Vector = ICRC75.Vector;
+
+  stable var _owner = _originalCaller;
+
+  let initManager = ClassPlus.ClassPlusInitializationManager(_owner, Principal.fromActor(this), true);
 
     
     stable var icrc10 : Set.Set<(ICRC10Record)> = Set.new();
@@ -57,16 +63,8 @@ shared ({ caller = _owner }) actor class Token  (
       Vector.size(fakeLedger) - 1;
     };
 
-    stable let icrc75_migration_state = ICRC75.migrate(ICRC75.initialState(), #v0_1_1(#id), init_args75, _owner);
+    stable var icrc75MigrationState : ICRC75.State = ICRC75.Migration.migration.initialState;
 
-    let #v0_1_1(#data(icrc75_state_current)) = icrc75_migration_state;
-
-    private var _icrc75 : ?ICRC75.ICRC75 = null;
-
-
-    private func get_icrc75_state() : ICRC75.CurrentState {
-      return icrc75_state_current;
-    };
 
     stable let cert_store : CertTree.Store = CertTree.newStore();
     let ct = CertTree.Ops(cert_store);
@@ -76,34 +74,37 @@ shared ({ caller = _owner }) actor class Token  (
       return cert_store;
     };
 
+    let icrc75 = ICRC75.Init<system>({
+      manager = initManager;
+      initialState = icrc75MigrationState;
+      args= init_args75;
+      pullEnvironment = ?(func() : ICRC75.Environment{
+        {
+          advanced = null;
+          tt= null;
+          updated_certification = null; //called when a certification has been made
+          get_certificate_store = ?getCertStore; //needed to pass certificate store to the class
+          addRecord = ?fakeledgerAddRecord;
+          icrc10_register_supported_standards = func(a : ICRC10Record): Bool {
+            Set.add(icrc10, icrc10Hash, a);
+            true;
+          };
+        }
+      });
+      onInitialize = ?(func(newClass: ICRC75.ICRC75) : async*(){
+        D.print("ICRC75 initialized");
+      });
+      onStorageChange = func(state: ICRC75.State){
+        icrc75MigrationState := state;
+      }
+    });
+
+
+
     Set.add(icrc10, icrc10Hash, ({name ="ICRC-10"; url = "https://github.com/dfinity/ICRC/ICRCs/ICRC-10"}));
 
-    private func get_icrc75_environment() : ICRC75.Environment {
-    {
-      advanced = null;
-      tt = null; // for recovery and safety you likely want to provide a timer tool instance here
-      updated_certification = null; //called when a certification has been made
-      get_certificate_store = ?getCertStore; //needed to pass certificate store to the class
-      addRecord = ?fakeledgerAddRecord;
-      icrc10_register_supported_standards = func(a : ICRC10Record): Bool {
-        Set.add(icrc10, icrc10Hash, a);
-        true;
-      };
-    };
-  };
 
-    func icrc75() : ICRC75.ICRC75 {
-    switch(_icrc75){
-      case(null){
-        let initclass : ICRC75.ICRC75 = ICRC75.ICRC75(?icrc75_migration_state, Principal.fromActor(this), get_icrc75_environment());
-        _icrc75 := ?initclass;
-        
-        initclass;
-        
-      };
-      case(?val) val;
-    };
-  };
+  
 
   public query func icrc75_get_stats() : async ICRC75.Stats {
     return icrc75().get_stats();
@@ -165,7 +166,7 @@ shared ({ caller = _owner }) actor class Token  (
     return icrc75().get_lists(msg.caller, name, bMetadata, cursor, limit);
   };
 
-  public query(msg) func icrc75_get_list_members_admin(list: List, cursor: ?ListItem, limit: ?Nat) : async [ListItem] {
+  public query(msg) func icrc75_get_list_members_admin(list: List, cursor: ?ListItem, limit: ?Nat) : async [(ListItem, ?DataItemMap)] {
     return icrc75().get_list_members_admin(msg.caller, list, cursor, limit);
   };
 
@@ -194,7 +195,7 @@ shared ({ caller = _owner }) actor class Token  (
   };
 
   public shared(msg) func auto_init() : async () {
-    icrc75().init<system>();
+    icrc75().initTimer<system>();
     return;
   };
 
