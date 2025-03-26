@@ -269,10 +269,10 @@ describe("test timers", () => {
 
     const members = await icrc75_fixture.actor.icrc75_get_list_members_admin(listName, [], []);
 
-    expect(members).toContainEqual({"DataItem": dataItem});
-    expect(members).toContainEqual({"DataItem": dataItem1});
-    expect(members).toContainEqual({"DataItem": dataItem2});
-    expect(members).toContainEqual({"DataItem": dataItem3});
+    expect(members).toContainEqual([{"DataItem": dataItem},[]]);
+    expect(members).toContainEqual([{"DataItem": dataItem1},[]]);
+    expect(members).toContainEqual([{"DataItem": dataItem2},[]]);
+    expect(members).toContainEqual([{"DataItem": dataItem3},[]]);
 
     const RemoveMemberResp = await icrc75_fixture.actor.icrc75_manage_list_membership([
       {
@@ -297,10 +297,10 @@ describe("test timers", () => {
 
     const members2 = await icrc75_fixture.actor.icrc75_get_list_members_admin(listName, [], []);
 
-    expect (members2).not.toContainEqual({"DataItem": dataItem});
-    expect(members2).toContainEqual({"DataItem": dataItem1});
-    expect(members2).not.toContainEqual({"DataItem": dataItem2});
-    expect(members2).toContainEqual({"DataItem": dataItem3});
+    expect (members2).not.toContainEqual([{"DataItem": dataItem},[]]);
+    expect(members2).toContainEqual([{"DataItem": dataItem1},[]]);
+    expect(members2).not.toContainEqual([{"DataItem": dataItem2},[]]);
+    expect(members2).toContainEqual([{"DataItem": dataItem3},[]]);
   });
 
   it("should validate Admin permission", async () => {
@@ -1066,7 +1066,7 @@ it("should support pagination for metadata retrieval", async () => {
       await pic.tick();
       expect(membersResp).toHaveLength(2);
 
-      membersResp = await icrc75_fixture.actor.icrc75_get_list_members_admin(listName, [membersResp[1]], [2n]);
+      membersResp = await icrc75_fixture.actor.icrc75_get_list_members_admin(listName, [membersResp[1][0]], [2n]);
       await pic.tick();
       expect(membersResp).toHaveLength(1);
   });
@@ -1678,8 +1678,8 @@ it("should support pagination for sub-lists", async () => {
     await pic.tick();
   
     const members = await icrc75_fixture.actor.icrc75_get_list_members_admin(listName, [], []);
-    expect(members).toContainEqual({ "DataItem": dataItem1 });
-    expect(members).toContainEqual({ "DataItem": dataItem2 });
+    expect(members).toContainEqual([{ "DataItem": dataItem1 },[]]);
+    expect(members).toContainEqual([{ "DataItem": dataItem2 },[]]);
   });
 
   it('should maintain performance under heavy load', async () => {

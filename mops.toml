@@ -19,7 +19,7 @@ fuzz = "0.2.1"
 
 [package]
 name = "icrc75-mo"
-version = "0.1.1"
+version = "0.2.0"
 description = "icrc75 for motoko"
 repository = "https://github.com/icdevsorg/icrc75.mo"
 keywords = [ "icrc75", "lists", "rbac" ]

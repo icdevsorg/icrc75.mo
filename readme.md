@@ -124,7 +124,7 @@ let isMember = ICRC75.is_member(caller, [(#Identity(caller), [[]])]);
 - `validate_manage_list_properties(caller: Principal, request: ManageListPropertyRequest) : async* SNSValidationResponse`
 - `get_lists(caller: Principal, filter: ?Text, bMetadata: Bool, prev: ?List, take: ?Nat) : [ListRecord]`
 - `findIdentityInList(principal: Principal, list: Text) : Bool`
-- `get_list_members_admin(caller: Principal, namespace: Text, prev: ?ListItem, take: ?Nat) : [ListItem]`
+- `get_list_members_admin(caller: Principal, namespace: Text, prev: ?ListItem, take: ?Nat) : [(ListItem, ?DataItemMap]`
 - `get_list_permission_admin(caller: Principal, namespace: Text, filter: ?Permission, prev: ?PermissionListItem, take: ?Nat) : PermissionList`
 - `get_list_lists(caller: Principal, namespace: List, prev: ?List, take: ?Nat) : [List]`
 - `member_of(caller: Principal, listItem: ListItem, prev: ?List, take: ?Nat) : [List]`
