@@ -12,7 +12,7 @@ import BTree "mo:stableheapbtreemap/BTree";
 
 module {
 
-  public func upgrade(prevmigration_state: MigrationTypes.State, args: MigrationTypes.Args, caller: Principal): MigrationTypes.State {
+  public func upgrade(prevmigration_state: MigrationTypes.State, args: ?MigrationTypes.Args, caller: Principal): MigrationTypes.State {
 
     let (
         existingNamespaces,
@@ -102,14 +102,14 @@ module {
         let members = Set.new<ListItem>();
 
         for (member in namespace.members.vals()) {
-          Set.add(members, listItemHash, member);
-          let memberIndexItem = switch(Map.get(memberIndex, listItemHash, member)){
+          Set.add(members, listItemHash, member.0);
+          let memberIndexItem = switch(Map.get(memberIndex, listItemHash, member.0)){
             case(?memberIndexItem) {
               memberIndexItem;
             };
             case(null) {
               let list = Set.new<List>();
-              ignore Map.put(memberIndex, listItemHash, member, list);
+              ignore Map.put(memberIndex, listItemHash, member.0, list);
               list;
             };
           };

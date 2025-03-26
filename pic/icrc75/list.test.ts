@@ -3,7 +3,7 @@ import type { Identity } from '@dfinity/agent';
 import { Ed25519KeyIdentity } from '@dfinity/identity';
 import { verifyCertification, validateTree } from './ver';
 import { HttpAgent, compare, lookup_path, Certificate, Cbor, HashTree } from '@dfinity/agent';
-import {hash_val, big_endian_encode, equalBuffers} from './repindy.ts';
+import {hash_val, big_endian_encode, equalBuffers} from './repindy';
 
 
 import { IDL } from "@dfinity/candid";
@@ -50,7 +50,7 @@ const OneMinute = BigInt(60000000000); // 1 minute in Nanoseconds
 const OneDayMS = 86400000; // 24 hours in NanoSeconds
 
 const base64ToUInt8Array = (base64String: string): Uint8Array => {
-  return Buffer.from(base64String, 'base64');
+  return new Uint8Array(Buffer.from(base64String, 'base64'));
 };
 
 const NNS_SUBNET_ID =
@@ -221,28 +221,28 @@ describe("test timers", () => {
     const addMemberResp = await icrc75_fixture.actor.icrc75_manage_list_membership([
       {
         list: listName,
-        action: { "Add": { "DataItem": dataItem } },
+        action: { "Add": [{ "DataItem": dataItem },[]] },
         memo: [],
         from_subaccount: [],
         created_at_time: []
       },
       {
         list: listName,
-        action: { "Add": { "DataItem": dataItem1 } },
+        action: { "Add": [{ "DataItem": dataItem1 },[]] },
         memo: [],
         from_subaccount: [],
         created_at_time: []
       },
       {
         list: listName,
-        action: { "Add": { "DataItem": dataItem2 } },
+        action: { "Add": [{ "DataItem": dataItem2 },[]] },
         memo: [],
         from_subaccount: [],
         created_at_time: []
       },
       {
         list: listName,
-        action: { "Add": { "DataItem": dataItem3 } },
+        action: { "Add": [{ "DataItem": dataItem3 },[]] },
         memo: [],
         from_subaccount: [],
         created_at_time: []
@@ -269,10 +269,10 @@ describe("test timers", () => {
 
     const members = await icrc75_fixture.actor.icrc75_get_list_members_admin(listName, [], []);
 
-    expect(members).toContainEqual({"DataItem": dataItem});
-    expect(members).toContainEqual({"DataItem": dataItem1});
-    expect(members).toContainEqual({"DataItem": dataItem2});
-    expect(members).toContainEqual({"DataItem": dataItem3});
+    expect(members).toContainEqual([{"DataItem": dataItem},[]]);
+    expect(members).toContainEqual([{"DataItem": dataItem1},[]]);
+    expect(members).toContainEqual([{"DataItem": dataItem2},[]]);
+    expect(members).toContainEqual([{"DataItem": dataItem3},[]]);
 
     const RemoveMemberResp = await icrc75_fixture.actor.icrc75_manage_list_membership([
       {
@@ -297,10 +297,10 @@ describe("test timers", () => {
 
     const members2 = await icrc75_fixture.actor.icrc75_get_list_members_admin(listName, [], []);
 
-    expect (members2).not.toContainEqual({"DataItem": dataItem});
-    expect(members2).toContainEqual({"DataItem": dataItem1});
-    expect(members2).not.toContainEqual({"DataItem": dataItem2});
-    expect(members2).toContainEqual({"DataItem": dataItem3});
+    expect (members2).not.toContainEqual([{"DataItem": dataItem},[]]);
+    expect(members2).toContainEqual([{"DataItem": dataItem1},[]]);
+    expect(members2).not.toContainEqual([{"DataItem": dataItem2},[]]);
+    expect(members2).toContainEqual([{"DataItem": dataItem3},[]]);
   });
 
   it("should validate Admin permission", async () => {
@@ -411,7 +411,7 @@ describe("test timers", () => {
     let addMemberResp = await icrc75_fixture.actor.icrc75_manage_list_membership([
       {
         list: listName,
-        action: { "Add": { "Identity": bob.getPrincipal() } },
+        action: { "Add": [{ "Identity": bob.getPrincipal() },[]] },
         memo: [],
         from_subaccount: [],
         created_at_time: []
@@ -426,7 +426,7 @@ describe("test timers", () => {
     addMemberResp = await icrc75_fixture.actor.icrc75_manage_list_membership([
       {
         list: listName,
-        action: { "Add": { "Identity": alice.getPrincipal() } },
+        action: { "Add": [{ "Identity": alice.getPrincipal() },[]] },
         memo: [],
         from_subaccount: [],
         created_at_time: []
@@ -826,7 +826,7 @@ describe("test timers", () => {
 
     let addMemberRequests : ManageListMembershipRequest = membersToAdd.map(member => ({
         list: listName,
-        action: { "Add": member },
+        action: { "Add": [member,[]] },
         memo: [],
         from_subaccount: [],
         created_at_time: []
@@ -852,7 +852,7 @@ it("should remove multiple members through batch process", async () => {
 
     let addMemberRequests : ManageListMembershipRequest = membersToAdd.map(member => ({
         list: listName,
-        action: { "Add": member },
+        action: { "Add": [member,[]] },
         memo: [],
         from_subaccount: [],
         created_at_time: []
@@ -890,7 +890,7 @@ it("should remove multiple members through batch process", async () => {
 
       let addMemberRequests : ManageListMembershipRequest = membersToAdd.map(member => ({
           list: listName,
-          action: { "Add": member },
+          action: { "Add": [member, []] },
           memo: [],
           from_subaccount: [],
           created_at_time: []
@@ -1006,14 +1006,14 @@ it("should support pagination for metadata retrieval", async () => {
     let addMemberRequests : ManageListMembershipRequest = [
         {
             list: listName,
-            action: { "Add": { "Identity": alice.getPrincipal() }},
+            action: { "Add": [{ "Identity": alice.getPrincipal() },[]]},
             memo: [],
             from_subaccount: [],
             created_at_time: []
         },
         {
             list: listName,
-            action: { "Add": { "Identity": bob.getPrincipal() }},
+            action: { "Add": [{ "Identity": bob.getPrincipal() },[]]},
             memo: [],
             from_subaccount: [],
             created_at_time: []
@@ -1037,21 +1037,21 @@ it("should support pagination for metadata retrieval", async () => {
       let addMemberRequests : ManageListMembershipRequest = [
           {
               list: listName,
-              action: { "Add": { "Identity": alice.getPrincipal() }},
+              action: { "Add": [{ "Identity": alice.getPrincipal() },[]]},
               memo: [],
               from_subaccount: [],
               created_at_time: []
           },
           {
               list: listName,
-              action: { "Add": { "Identity": bob.getPrincipal() }},
+              action: { "Add": [{ "Identity": bob.getPrincipal() },[]]},
               memo: [],
               from_subaccount: [],
               created_at_time: []
           },
           {
               list: listName,
-              action: { "Add": { "Identity": serviceProvider.getPrincipal() }},
+              action: { "Add": [{ "Identity": serviceProvider.getPrincipal() },[]]},
               memo: [],
               from_subaccount: [],
               created_at_time: []
@@ -1066,7 +1066,7 @@ it("should support pagination for metadata retrieval", async () => {
       await pic.tick();
       expect(membersResp).toHaveLength(2);
 
-      membersResp = await icrc75_fixture.actor.icrc75_get_list_members_admin(listName, [membersResp[1]], [2n]);
+      membersResp = await icrc75_fixture.actor.icrc75_get_list_members_admin(listName, [membersResp[1][0]], [2n]);
       await pic.tick();
       expect(membersResp).toHaveLength(1);
   });
@@ -1081,7 +1081,7 @@ it("should support pagination for metadata retrieval", async () => {
     await icrc75_fixture.actor.icrc75_manage_list_membership([
         {
             list: parentList,
-            action: { "Add": { "List": subList } },
+            action: { "Add": [{ "List": subList },[]] },
             memo: [],
             from_subaccount: [],
             created_at_time: []
@@ -1108,7 +1108,7 @@ it("should support pagination for sub-lists", async () => {
         await icrc75_fixture.actor.icrc75_manage_list_membership([
             {
                 list: listName,
-                action: { "Add": { "List": subListName } },
+                action: { "Add": [{ "List": subListName },[]] },
                 memo: [],
                 from_subaccount: [],
                 created_at_time: []
@@ -1146,7 +1146,7 @@ it("should support pagination for sub-lists", async () => {
 
     let addMemberRequests : ManageListMembershipRequest = membersToAdd.map(member => ({
         list: membershipList,
-        action: { "Add": member },
+        action: { "Add": [member,[]] },
         memo: [],
         from_subaccount: [],
         created_at_time: []
@@ -1195,7 +1195,7 @@ it("should support pagination for sub-lists", async () => {
 
       let addMemberRequests : ManageListMembershipRequest = membersToAdd.map(member => ({
           list: paginatedMembershipList + "1",
-          action: { "Add": member },
+          action: { "Add": [member,[]] },
           memo: [],
           from_subaccount: [],
           created_at_time: []
@@ -1203,7 +1203,7 @@ it("should support pagination for sub-lists", async () => {
 
       let addMemberRequests2 : ManageListMembershipRequest = membersToAdd.map(member => ({
         list: paginatedMembershipList + "2",
-        action: { "Add": member },
+        action: { "Add": [member,[]] },
         memo: [],
         from_subaccount: [],
         created_at_time: []
@@ -1211,7 +1211,7 @@ it("should support pagination for sub-lists", async () => {
 
     let addMemberRequests3 : ManageListMembershipRequest = membersToAdd.map(member => ({
         list: paginatedMembershipList,
-        action: { "Add": member },
+        action: { "Add": [member,[]] },
         memo: [],
         from_subaccount: [],
         created_at_time: []
@@ -1245,8 +1245,8 @@ it("should support pagination for sub-lists", async () => {
     
     // Add members to lists
     await icrc75_fixture.actor.icrc75_manage_list_membership([
-      { list: listName1, action: { "Add": { "Identity": principal }}, memo: [], from_subaccount: [], created_at_time: [] },
-      { list: listName2, action: { "Add": { "Account": account }}, memo: [], from_subaccount: [], created_at_time: [] },
+      { list: listName1, action: { "Add": [{ "Identity": principal },[]]}, memo: [], from_subaccount: [], created_at_time: [] },
+      { list: listName2, action: { "Add": [{ "Account": account },[]]}, memo: [], from_subaccount: [], created_at_time: [] },
     ]);
     await pic.tick();
     
@@ -1263,8 +1263,8 @@ it("should support pagination for sub-lists", async () => {
     let nestedList = "nestedList";
     await createList(nestedList);
     await icrc75_fixture.actor.icrc75_manage_list_membership([
-      { list: nestedList, action: { "Add": { "List": listName1 }}, memo: [], from_subaccount: [], created_at_time: [] },
-      { list: nestedList, action: { "Add": { "List": listName2 }}, memo: [], from_subaccount: [], created_at_time: [] }
+      { list: nestedList, action: { "Add": [{ "List": listName1 },[]]}, memo: [], from_subaccount: [], created_at_time: [] },
+      { list: nestedList, action: { "Add": [{ "List": listName2 },[]]}, memo: [], from_subaccount: [], created_at_time: [] }
     ]);
     await pic.tick();
   
@@ -1283,8 +1283,8 @@ it("should support pagination for sub-lists", async () => {
     await createList(listName);
 
     await icrc75_fixture.actor.icrc75_manage_list_membership([
-      { list: listName, action: { "Add": { "Identity": alice.getPrincipal() }}, memo: [], from_subaccount: [], created_at_time: [] },
-      { list: listName, action: { "Add": { "Identity": bob.getPrincipal() }}, memo: [], from_subaccount: [], created_at_time: [] }
+      { list: listName, action: { "Add": [{ "Identity": alice.getPrincipal() },[]]}, memo: [], from_subaccount: [], created_at_time: [] },
+      { list: listName, action: { "Add": [{ "Identity": bob.getPrincipal() },[]]}, memo: [], from_subaccount: [], created_at_time: [] }
     ]);
     
     let tokenRequestResp = await icrc75_fixture.actor.icrc75_request_token({ "Identity": alice.getPrincipal() }, listName, []);
@@ -1340,8 +1340,8 @@ it("should support pagination for sub-lists", async () => {
     await createList(listName);
 
     await icrc75_fixture.actor.icrc75_manage_list_membership([
-      { list: listName, action: { "Add": { "Identity": alice.getPrincipal() }}, memo: [], from_subaccount: [], created_at_time: [] },
-      { list: listName, action: { "Add": { "Identity": bob.getPrincipal() }}, memo: [], from_subaccount: [], created_at_time: [] }
+      { list: listName, action: { "Add": [{ "Identity": alice.getPrincipal() },[]]}, memo: [], from_subaccount: [], created_at_time: [] },
+      { list: listName, action: { "Add": [{ "Identity": bob.getPrincipal() },[]]}, memo: [], from_subaccount: [], created_at_time: [] }
     ]);
 
     let resultx = await icrc75_fixture.actor.icrc75_request_token({ "Identity": bob.getPrincipal() }, listName, []);
@@ -1477,8 +1477,8 @@ it("should support pagination for sub-lists", async () => {
 
     try {
       let result = await Certificate.create({
-        certificate : tokenRespRet.certificate.buffer,
-        rootKey: nnspubkey,
+        certificate : tokenRespRet.certificate.buffer instanceof ArrayBuffer ? tokenRespRet.certificate.buffer : new ArrayBuffer(tokenRespRet.certificate.buffer.byteLength),
+        rootKey: new Uint8Array(nnspubkey).buffer,
         canisterId: icrc75_fixture.canisterId, //await pic.getApplicationSubnets()[0].id,//icrc75_fixture.subnetId,
         maxAgeInMinutes : 5
       });
@@ -1486,7 +1486,7 @@ it("should support pagination for sub-lists", async () => {
 
       if(!(tokenRespRet.witness instanceof Uint8Array)) throw new Error("Witness is not Uint8Array");
 
-      const tree = Cbor.decode<HashTree>(tokenRespRet.witness);
+      const tree = Cbor.decode<HashTree>(tokenRespRet.witness.buffer as ArrayBuffer);
 
       let validate = validateTree(
         tree,
@@ -1582,7 +1582,7 @@ it("should support pagination for sub-lists", async () => {
     const addMemberResp = await icrc75_fixture.actor.icrc75_manage_list_membership([
       {
         list: nonExistentList,
-        action: { "Add": { "DataItem": dataItem } },
+        action: { "Add": [{ "DataItem": dataItem },[]] },
         memo: [],
         from_subaccount: [],
         created_at_time: []
@@ -1657,7 +1657,7 @@ it("should support pagination for sub-lists", async () => {
     const addMember1 = icrc75_fixture.actor.icrc75_manage_list_membership([
       {
         list: listName,
-        action: { "Add": { "DataItem": dataItem1 } },
+        action: { "Add": [{ "DataItem": dataItem1 },[]] },
         memo: [],
         from_subaccount: [],
         created_at_time: []
@@ -1667,7 +1667,7 @@ it("should support pagination for sub-lists", async () => {
     const addMember2 = icrc75_fixture.actor.icrc75_manage_list_membership([
       {
         list: listName,
-        action: { "Add": { "DataItem": dataItem2 } },
+        action: { "Add": [{ "DataItem": dataItem2 },[]] },
         memo: [],
         from_subaccount: [],
         created_at_time: []
@@ -1678,8 +1678,8 @@ it("should support pagination for sub-lists", async () => {
     await pic.tick();
   
     const members = await icrc75_fixture.actor.icrc75_get_list_members_admin(listName, [], []);
-    expect(members).toContainEqual({ "DataItem": dataItem1 });
-    expect(members).toContainEqual({ "DataItem": dataItem2 });
+    expect(members).toContainEqual([{ "DataItem": dataItem1 },[]]);
+    expect(members).toContainEqual([{ "DataItem": dataItem2 },[]]);
   });
 
   it('should maintain performance under heavy load', async () => {
@@ -1690,7 +1690,7 @@ it("should support pagination for sub-lists", async () => {
     const membersToAdd = Array(batchSize).fill(0).map((_, i) => ({ "Identity": createIdentity(`identity${i}`).getPrincipal() }));
     const addMemberRequests: ManageListMembershipRequest = membersToAdd.map(member => ({
       list: heavyLoadListName,
-      action: { "Add": member },
+      action: { "Add": [member,[]] },
       memo: [],
       from_subaccount: [],
       created_at_time: []
@@ -1719,9 +1719,10 @@ it("should support pagination for sub-lists", async () => {
     await pic.tick();
     
     const stats = await icrc75_fixture.actor.icrc75_get_stats();
+    console.log("testing timer");
     console.log("stats", stats);
    
-    expect(stats.tt.timers).toEqual(1n);
+    expect(stats.tt.timers).toEqual(2n);
 
 
   });
@@ -1736,7 +1737,7 @@ it("should support pagination for sub-lists", async () => {
     const membersToAdd = Array(batchSize).fill(0).map((_, i) => ({ "Identity": createIdentity(`identity${i}`).getPrincipal() }));
     const addMemberRequests: ManageListMembershipRequest = membersToAdd.map(member => ({
       list: listName,
-      action: { "Add": member },
+      action: { "Add": [member,[]] },
       memo: [],
       from_subaccount: [],
       created_at_time: []
@@ -1812,7 +1813,7 @@ it("should support pagination for sub-lists", async () => {
     await createList(listName);
 
     await icrc75_fixture.actor.icrc75_manage_list_membership([
-      { list: listName, action: { "Add": { "Identity": alice.getPrincipal() }}, memo: [], from_subaccount: [], created_at_time: [] }
+      { list: listName, action: { "Add": [{ "Identity": alice.getPrincipal() },[]]}, memo: [], from_subaccount: [], created_at_time: [] }
     ]);
     
     let tokenRequestResp = await icrc75_fixture.actor.icrc75_request_token({ "Identity": alice.getPrincipal() }, listName, [1n * OneMinute]);
@@ -1933,7 +1934,7 @@ it("should support pagination for sub-lists", async () => {
     await icrc75_fixture.actor.icrc75_manage_list_membership([
       {
         list: listName,
-        action: { "Add": { "Identity": alice.getPrincipal() } },
+        action: { "Add": [{ "Identity": alice.getPrincipal() }, []] },
         memo: [],
         from_subaccount: [],
         created_at_time: []
@@ -1973,7 +1974,7 @@ it("should support pagination for sub-lists", async () => {
     await icrc75_fixture.actor.icrc75_manage_list_membership([
       {
         list: listName,
-        action: { "Add": { "Identity": alice.getPrincipal() } },
+        action: { "Add": [{ "Identity": alice.getPrincipal() },[]] },
         memo: [],
         from_subaccount: [],
         created_at_time: []

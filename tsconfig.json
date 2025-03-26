@@ -11,8 +11,8 @@
 
     // Bundler mode
     "moduleResolution": "node",
-    "allowImportingTsExtensions": true,
-    "verbatimModuleSyntax": false,
+    //"allowImportingTsExtensions": true,
+    //"verbatimModuleSyntax": false,
     "forceConsistentCasingInFileNames": true,
     "noEmit": true,
     "resolveJsonModule": true,

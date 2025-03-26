@@ -72,6 +72,8 @@ const ListViewer: React.FC<ListViewerProps> = ({
     onListChange();
   };
 
+
+
   const handleSearch = () => {
     setCurrentPage(1);
     setPrevTokens([]);
@@ -166,6 +168,7 @@ const ListViewer: React.FC<ListViewerProps> = ({
                                 listName={list.list}
                                 yourPrincipal={yourPrincipal}
                                 onMetadataChange={updateMetadata}
+                                onListsChange={onListChange}
                                 metadata={list.metadata && list.metadata[0] ? list.metadata[0] : null}
                               />
                             </Box>

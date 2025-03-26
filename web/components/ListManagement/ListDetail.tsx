@@ -15,6 +15,7 @@ interface ListDetailProps {
   metadata: DataItemMap | null;
   yourPrincipal: Principal;
   onMetadataChange?: (listName: string, metadata: DataItemMap) => void;
+  onListsChange?: () => void;
 }
 
 const ListDetail: React.FC<ListDetailProps> = ({
@@ -22,7 +23,8 @@ const ListDetail: React.FC<ListDetailProps> = ({
   listName,
   metadata,
   yourPrincipal,
-  onMetadataChange
+  onMetadataChange,
+  onListsChange
 }) => {
   const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<string>('');
@@ -87,6 +89,12 @@ const ListDetail: React.FC<ListDetailProps> = ({
     );
   }
 
+  const updateLists = () => {
+    if (onListsChange) {
+      onListsChange();
+    }
+  };
+
   const updateMetadata = (metadata: DataItemMap) => {
     if (onMetadataChange) {
       onMetadataChange(listName, metadata);
@@ -96,7 +104,7 @@ const ListDetail: React.FC<ListDetailProps> = ({
   return (
     <Box>
       {isAdminOrWrite ? (
-        <EditableListView icrc75Reader={icrc75Reader} yourPrincipal={yourPrincipal} listName={listName} metadata={metadata} onUpdateMetadata={updateMetadata} />
+        <EditableListView icrc75Reader={icrc75Reader} yourPrincipal={yourPrincipal} listName={listName} metadata={metadata} onUpdateMetadata={updateMetadata} onListsChange={onListsChange} />
       ) : (
         <ReadOnlyListView icrc75Reader={icrc75Reader} listName={listName} metadata={metadata} />
       )}

@@ -84,7 +84,7 @@ module {
     #Create : {
       admin : ?ListItem;
       metadata : DataItemMap;
-      members: [ListItem];
+      members: [(ListItem, ?DataItemMap)];
     };
     #Rename : Text; 
     #Delete;
@@ -213,9 +213,12 @@ module {
     action : ManageListMembershipAction;
   };
 
+  public type MapModifier = (Text, ?DataItem);
+
   public type ManageListMembershipAction = {
-    #Add : ListItem;
+    #Add : (ListItem, ?DataItemMap);
     #Remove : ListItem;
+    #Update : (ListItem, MapModifier);
   };
 
   public type ManageListPropertyRequest = [ManageListPropertyRequestItem];
@@ -245,7 +248,7 @@ module {
     icrc75_manage_list_membership : (ManageListMembershipRequest) -> async ManageListMembershipResponse;
     icrc75_manage_list_properties : (ManageListPropertyRequest) -> async ManageListPropertyResponse;
     icrc75_get_lists : query (?Text, Bool, ?List, ?Nat) ->  async [ListRecord];
-    icrc75_get_list_members_admin : query (List, ?ListItem, ?Nat) ->  async [ListItem];
+    icrc75_get_list_members_admin : query (List, ?ListItem, ?Nat) ->  async [(ListItem, ?DataItemMap)];
     icrc75_get_list_permissions_admin : query (List,  ?Permission, ?PermissionListItem, ?Nat) ->  async PermissionList;
     icrc75_get_list_lists : query (List, ?List, ?Nat) ->  async [List];
     icrc75_member_of : query(ListItem, ?List, ?Nat) ->  async[List];

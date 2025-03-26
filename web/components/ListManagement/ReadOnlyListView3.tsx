@@ -28,7 +28,7 @@ const ReadOnlyListView: React.FC<ReadOnlyListViewProps> = ({
   const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<string>('');
   const [permissions, setPermissions] = useState<PermissionList | null>(null);
-  const [members, setMembers] = useState<ListItem[] | null>(null);
+  const [members, setMembers] = useState<[ListItem, [] | [DataItemMap]][] | null>(null);
   const [metadataMap, setMetadataMap] = useState<{ key: string; value: any }[]>([]);
 
   useEffect(() => {
@@ -45,7 +45,7 @@ const ReadOnlyListView: React.FC<ReadOnlyListViewProps> = ({
         setPermissions(foundPermissions);
 
         // Fetch members
-        const foundMembers: ListItem[] = await icrc75Reader.icrc75_get_list_members_admin(
+        const foundMembers = await icrc75Reader.icrc75_get_list_members_admin(
           listName,
           [], // No specific filters
           []
@@ -100,36 +100,39 @@ const ReadOnlyListView: React.FC<ReadOnlyListViewProps> = ({
               <TableRow>
                 <TableCell><strong>Type</strong></TableCell>
                 <TableCell><strong>Identifier</strong></TableCell>
+                <TableCell><strong>Metadata</strong></TableCell>
               </TableRow>
             </TableHead>
             <TableBody>
               {members && members.length > 0 ? (
                 members.map((member, index) => {
                   const identifier =
-                    'Identity' in member
-                      ? member['Identity'].toString()
-                      : 'Account' in member
-                      ? `${member['Account'].owner.toString()}.${member['Account'].subaccount[0] ? Buffer.from(member['Account'].subaccount[0]).toString('hex') : ''}`
-                      : 'List' in member
-                      ? member['List']
-                      : 'DataItem' in member
-                      ? JSON.stringify(member['DataItem'], dataItemStringify, 2)
+                    'Identity' in member[0]
+                      ? member[0]['Identity'].toString()
+                      : 'Account' in member[0]
+                      ? `${member[0]['Account'].owner.toString()}.${member[0]['Account'].subaccount[0] ? Buffer.from(member[0]['Account'].subaccount[0]).toString('hex') : ''}`
+                      : 'List' in member[0]
+                      ? member[0]['List']
+                      : 'DataItem' in member[0]
+                      ? JSON.stringify(member[0]['DataItem'], dataItemStringify, 2)
                       : 'Unknown';
+                  const memberMetadata = member[1] && member[1].length > 0 ? JSON.stringify(member[1][0], dataItemStringify, 2) : null;
 
                   return (
                     <TableRow key={index}>
                       <TableCell>
-                        {'Identity' in member
+                        {'Identity' in member[0]
                           ? 'Identity'
-                          : 'Account' in member
+                          : 'Account' in member[0]
                           ? 'Account'
-                          : 'List' in member
+                          : 'List' in member[0]
                           ? 'List'
-                          : 'DataItem' in member
+                          : 'DataItem' in member[0]
                           ? 'DataItem'
                           : 'Unknown'}
                       </TableCell>
                       <TableCell>{identifier}</TableCell>
+                      <TableCell>{memberMetadata}</TableCell>
                     </TableRow>
                   );
                 })

@@ -34,7 +34,7 @@ const CreateList: React.FC<Props> = ({ actor, onListCreated }) => {
         ]);
 
         if (result && result[0] && result[0][0] && 'Ok' in result[0][0] && result[0][0].Ok) {
-          alert('List created successfully!' + result[0][0].Ok.toString());
+          //alert('List created successfully!' + result[0][0].Ok.toString());
         } else {
           alert('Error creating list: ' + JSON.stringify(result));
         }
