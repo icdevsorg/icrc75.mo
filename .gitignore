@@ -1,2 +1,5 @@
 internet_identity.did
 internet_identity.wasm
+.env
+.plan/workplan1.md
+

@@ -251,7 +251,7 @@ Default behavior: 1 XDR per month for up to 10,000 actions;  1 additional XDR pe
 
 Default Beneficiary: ICDevs.org
 
-Additional Behavior: Utilizes the timerTool by Pan Industrial: https://github.com/PanIndustrial-Org/timerTool
+Additional Behavior: Utilizes the timerTool by ICDevs.org: https://github.com/icdevsorg/timerTool
 
 ## Contributing
 

@@ -16,25 +16,25 @@ module {
 
     let oldState = switch (prev_migration_state) { case (#v0_1_1(#data(state))) state; case (_) D.trap("Unexpected migration state") };
 
-    let newNamespaceStore = BTree.init<Text, MigrationTypes.Current.NamespaceRecord>(null);
+    let newNamespaceStore = BTree.init<Text, v0_2_0.NamespaceRecord>(null);
 
     for(thisItem in BTree.entries(oldState.namespaceStore)) {
 
-      let members = Map.new< MigrationTypes.Current.ListItem, ?MigrationTypes.Current.ICRC16Map>();
+      let members = Map.new< v0_2_0.ListItem, ?v0_2_0.ICRC16Map>();
       
-      for(thisMember in Set.keys<MigrationTypes.Current.ListItem>(thisItem.1.members)) {
+      for(thisMember in Set.keys<v0_2_0.ListItem>(thisItem.1.members)) {
         let memberKey = thisMember;
-        ignore Map.add(members, MigrationTypes.Current.listItemHash, memberKey, null);
+        ignore Map.add(members, v0_2_0.listItemHash, memberKey, null);
       };
      
-      let newRecord : MigrationTypes.Current.NamespaceRecord = {
+      let newRecord : v0_2_0.NamespaceRecord = {
         namespace = thisItem.1.namespace;
         permissions = thisItem.1.permissions;
         members = members;
         metadata = thisItem.1.metadata;
       };
 
-     ignore BTree.insert<Text, MigrationTypes.Current.NamespaceRecord>(newNamespaceStore, Text.compare, thisItem.0, newRecord);
+     ignore BTree.insert<Text, v0_2_0.NamespaceRecord>(newNamespaceStore, Text.compare, thisItem.0, newRecord);
     };
 
     let state : v0_2_0.State = {

@@ -30,6 +30,12 @@ import EditIcon from '@mui/icons-material/Edit';
 import { idlFactory as icrc75Factory, createActor as createICRC75, canisterId as icrc75CanisterId } from '../src/declarations/icrc75';
 import { _SERVICE as icrc75Service } from '../src/declarations/icrc75/icrc75.did.js';
 
+import { idlFactory as nnsLedgerFactory, createActor as createNNSLedger } from '../src/declarations/nns-ledger';
+import { _SERVICE as nnsLedgerService, Account as NNSAccount, ApproveArgs } from '../src/declarations/nns-ledger/nns-ledger.did.js';
+
+import { idlFactory as pullerFactory, createActor as createPuller } from '../src/declarations/puller';
+import { _SERVICE as pullerService, Account as PullerAccount } from '../src/declarations/puller/puller.did.js';
+
 import CreateList from './components/ListManagement/CreateList';
 import ListViewer from './components/ListViewer';
 
@@ -48,6 +54,18 @@ function App() {
   const [openDialog, setOpenDialog] = useState<boolean>(false);
   const [newCanisterId, setNewCanisterId] = useState<string>("");
   const [canisterIdError, setCanisterIdError] = useState<string>("");
+
+  // Join Tester State
+  const [joinDialogOpen, setJoinDialogOpen] = useState<boolean>(false);
+  const [icpAmount, setIcpAmount] = useState<string>("0.1");
+  const [joinLoading, setJoinLoading] = useState<boolean>(false);
+  const [joinStatus, setJoinStatus] = useState<string>("");
+  const [nnsLedgerActor, setNnsLedgerActor] = useState<nnsLedgerService | null>(null);
+  const [pullerActor, setPullerActor] = useState<pullerService | null>(null);
+
+  // Constants
+  const PULLER_CANISTER_ID = "w5kli-7qaaa-aaaae-qajwa-cai";
+  const NNS_LEDGER_CANISTER_ID = "ryjl3-tyaaa-aaaaa-aaaba-cai";
 
   // Host Environment Setup
   let hostEnv = "https://ic0.app";
@@ -171,7 +189,7 @@ function App() {
       }
       if (!connected) {
         let pubkey = await window.ic.plug.requestConnect({
-          whitelist: [currentCanisterId],
+          whitelist: [currentCanisterId, NNS_LEDGER_CANISTER_ID, PULLER_CANISTER_ID],
           host: useHost,
           onConnectionUpdate: async () => {
             console.log("Connection updated", await window.ic.plug.isConnected());
@@ -224,15 +242,37 @@ function App() {
           interfaceFactory: icrc75Factory,
         });
         setIcrc75Actor(actor);
+
+        // Set up NNS Ledger actor
+        const nnsActor = await window.ic.plug.createActor({
+          canisterId: NNS_LEDGER_CANISTER_ID,
+          interfaceFactory: nnsLedgerFactory,
+        });
+        setNnsLedgerActor(nnsActor);
+
+        // Set up Puller actor
+        const pullerActorInstance = await window.ic.plug.createActor({
+          canisterId: PULLER_CANISTER_ID,
+          interfaceFactory: pullerFactory,
+        });
+        setPullerActor(pullerActorInstance);
+
       } else if (isConnected === "ii" && authClient !== null) {
         const identity = authClient.getIdentity();
         const agentOptions = { host: hostEnv, identity };
+        
         const actor = createICRC75(canisterId, { agentOptions });
         setIcrc75Actor(actor);
+
+        const nnsActor = createNNSLedger(NNS_LEDGER_CANISTER_ID, { agentOptions });
+        setNnsLedgerActor(nnsActor);
+
+        const pullerActorInstance = createPuller(PULLER_CANISTER_ID, { agentOptions });
+        setPullerActor(pullerActorInstance);
       }
-      console.log(`Actor set up with canister ID: ${canisterId}`);
+      console.log(`Actors set up with canister ID: ${canisterId}`);
     } catch (error) {
-      console.error("Failed to set up actor:", error);
+      console.error("Failed to set up actors:", error);
     }
   };
 
@@ -269,6 +309,145 @@ function App() {
 
   const handleCloseDialog = () => {
     setOpenDialog(false);
+  };
+
+  // Join Tester Functions
+  const handleOpenJoinDialog = () => {
+    // Check if user is connected first
+    if (isConnected === "none") {
+      alert("Please connect your wallet first before joining the alpha test.");
+      return;
+    }
+    
+    setJoinStatus("");
+    setJoinDialogOpen(true);
+  };
+
+  const handleCloseJoinDialog = () => {
+    setJoinDialogOpen(false);
+  };
+
+  const handleJoinTest = async () => {
+    // Double-check authentication
+    if (isConnected === "none") {
+      setJoinStatus("Please connect your wallet first");
+      return;
+    }
+
+    if (!nnsLedgerActor || !pullerActor) {
+      setJoinStatus("Actors not initialized. Please try reconnecting your wallet.");
+      return;
+    }
+
+    setJoinLoading(true);
+    setJoinStatus("Starting join process...");
+
+    try {
+      // Convert ICP to e8s (multiply by 10^8)
+      const icpAmountFloat = parseFloat(icpAmount);
+      if (isNaN(icpAmountFloat) || icpAmountFloat <= 0) {
+        setJoinStatus("Please enter a valid ICP amount");
+        setJoinLoading(false);
+        return;
+      }
+
+      const e8sAmount = BigInt(Math.floor(icpAmountFloat * 100_000_000));
+      setJoinStatus(`Approving ${icpAmount} ICP (${e8sAmount.toString()} e8s)...`);
+
+      // Get user's account - ensure we have a valid principal
+      const userPrincipal = await getPrincipalFromAgent();
+      if (!userPrincipal || userPrincipal.isAnonymous()) {
+        setJoinStatus("Authentication failed. Please reconnect your wallet.");
+        setJoinLoading(false);
+        return;
+      }
+
+      const userAccount: NNSAccount = {
+        owner: userPrincipal,
+        subaccount: [],
+      };
+
+      const spenderAccount: NNSAccount = {
+        owner: Principal.fromText(PULLER_CANISTER_ID),
+        subaccount: [],
+      };
+
+      // Approve the puller canister to spend ICP - this is an authenticated call
+      const approveArgs: ApproveArgs = {
+        spender: spenderAccount,
+        amount: e8sAmount + 10000n, // Add small buffer for fee
+        fee: [],
+        memo: [],
+        from_subaccount: [],
+        created_at_time: [],
+        expected_allowance: [],
+        expires_at: [],
+      };
+
+      setJoinStatus("Requesting approval from NNS Ledger...");
+      const approveResult = await nnsLedgerActor.icrc2_approve(approveArgs);
+
+      if ('Err' in approveResult) {
+        const errorMsg = (() => {
+          const err = approveResult.Err;
+          if ('BadFee' in err) return `Bad fee. Expected: ${err.BadFee.expected_fee}`;
+          if ('InsufficientFunds' in err) return `Insufficient funds. Balance: ${err.InsufficientFunds.balance}`;
+          if ('AllowanceChanged' in err) return `Allowance changed. Current: ${err.AllowanceChanged.current_allowance}`;
+          if ('Expired' in err) return 'Request expired';
+          if ('TooOld' in err) return 'Request too old';
+          if ('CreatedInFuture' in err) return 'Request created in future';
+          if ('Duplicate' in err) return `Duplicate request. Original: ${err.Duplicate.duplicate_of}`;
+          if ('TemporarilyUnavailable' in err) return 'Service temporarily unavailable';
+          if ('GenericError' in err) return `Error ${err.GenericError.error_code}: ${err.GenericError.message}`;
+          return 'Unknown error';
+        })();
+        setJoinStatus(`Approval failed: ${errorMsg}`);
+        setJoinLoading(false);
+        return;
+      }
+
+      setJoinStatus(`Approval successful! Block index: ${approveResult.Ok}. Now calling join function...`);
+
+      // Call the join function - this is also an authenticated call
+      const pullerAccount: PullerAccount = {
+        owner: userPrincipal,
+        subaccount: [],
+      };
+
+      const joinResult = await pullerActor.join(pullerAccount, e8sAmount);
+
+      if ('Err' in joinResult) {
+        setJoinStatus(`Join failed: ${joinResult.Err}`);
+      } else {
+        setJoinStatus(`🎉 Join successful! Transaction block index: ${joinResult.Ok.toString()}. You should appear on the alpha tester list within a minute!`);
+        
+        // Show confirmation dialog after 1 second delay
+        setTimeout(() => {
+          setJoinStatus("success_confirmed");
+        }, 1000);
+      }
+
+    } catch (error) {
+      console.error("Join test failed:", error);
+      let errorMessage = "Unknown error occurred";
+      
+      if (error instanceof Error) {
+        errorMessage = error.message;
+      } else if (typeof error === 'string') {
+        errorMessage = error;
+      } else if (error && typeof error === 'object') {
+        errorMessage = JSON.stringify(error);
+      }
+      
+      // Check for common authentication errors
+      if (errorMessage.includes('Unauthorized') || errorMessage.includes('Anonymous')) {
+        errorMessage = "Authentication required. Please reconnect your wallet and try again.";
+      }
+      
+      setJoinStatus(`Error: ${errorMessage}`);
+    } finally {
+      setJoinLoading(false);
+    }
   };
 
   
@@ -323,7 +502,25 @@ function App() {
         </Box>
         <Box sx={{ display: 'flex',  mb: 2 }}>
           <Typography variant="body1" sx={{ mt: 1 }}>
-            To Test the White List Demo, you can send some amount of ICP to e9dc3bbbcb45479709e8ef512f6c8a66d6593cbb1b8621ff9cdbde917d6da9aa. Within a minute or so you will be on the alpha tester list and your alpha contribution will be recorded.
+            To Test the White List Demo, you can{' '}
+            <Button 
+              variant="contained" 
+              color="primary" 
+              size="small"
+              onClick={handleOpenJoinDialog}
+              sx={{ 
+                opacity: isConnected === "none" ? 0.7 : 1,
+                cursor: isConnected === "none" ? "not-allowed" : "pointer"
+              }}
+            >
+              {isConnected === "none" ? "Connect Wallet to Join" : "Join Alpha Test"}
+            </Button>
+            {' '}to approve ICP to the puller canister. Within a minute or so you will be on the alpha tester list and your alpha contribution will be recorded.
+            {isConnected === "none" && (
+              <Typography variant="caption" display="block" sx={{ color: 'text.secondary', mt: 1 }}>
+                Please connect your wallet using the login buttons below to participate in the alpha test.
+              </Typography>
+            )}
           </Typography>
         </Box>
 
@@ -351,6 +548,113 @@ function App() {
             <Button onClick={handleChangeCanisterId} color="primary">
               Change
             </Button>
+          </DialogActions>
+        </Dialog>
+
+        {/* Join Alpha Test Dialog */}
+        <Dialog open={joinDialogOpen} onClose={handleCloseJoinDialog} maxWidth="sm" fullWidth>
+          <DialogTitle>
+            {joinStatus === "success_confirmed" ? "🎉 Welcome to the Alpha Test!" : "Join Alpha Test"}
+          </DialogTitle>
+          <DialogContent>
+            {isConnected === "none" ? (
+              <Box sx={{ mb: 2 }}>
+                <Typography variant="body1" color="warning.main" sx={{ mb: 2 }}>
+                  ⚠️ Please connect your wallet first to participate in the alpha test.
+                </Typography>
+                <Box sx={{ display: 'flex', gap: 2, justifyContent: 'center' }}>
+                  <Button variant="contained" onClick={() => { handleCloseJoinDialog(); handleLogin(); }} disabled={loading}>
+                    Connect with Plug
+                  </Button>
+                  <Button variant="contained" onClick={() => { handleCloseJoinDialog(); handleLoginII(); }} disabled={loading}>
+                    Connect with Internet Identity
+                  </Button>
+                </Box>
+              </Box>
+            ) : joinStatus === "success_confirmed" ? (
+              <Box sx={{ textAlign: 'center', py: 2 }}>
+                <Typography variant="h6" sx={{ mb: 2, color: 'success.main' }}>
+                  🎊 Congratulations! 🎊
+                </Typography>
+                <Typography variant="body1" sx={{ mb: 2 }}>
+                  You have successfully joined the alpha test! Your contribution has been recorded and you should appear on the alpha tester list within a minute.
+                </Typography>
+                <Typography variant="body2" sx={{ color: 'text.secondary' }}>
+                  Thank you for participating in our alpha test program!
+                </Typography>
+              </Box>
+            ) : (
+              <>
+                <Typography variant="body1" sx={{ mb: 2 }}>
+                  This will approve the specified amount of ICP to the puller canister and call the join function.
+                </Typography>
+                <Typography variant="body2" sx={{ mb: 2, color: 'text.secondary' }}>
+                  Connected as: <strong>{yourPrincipal.toString()}</strong>
+                </Typography>
+                <TextField
+                  autoFocus
+                  margin="dense"
+                  label="ICP Amount to Donate"
+                  type="number"
+                  fullWidth
+                  variant="outlined"
+                  value={icpAmount}
+                  onChange={(e) => setIcpAmount(e.target.value)}
+                  inputProps={{
+                    step: "0.01",
+                    min: "0.01",
+                  }}
+                  helperText="Amount will be converted to e8s (multiplied by 10^8)"
+                />
+                {joinStatus && joinStatus !== "success_confirmed" && (
+                  <Box sx={{ mt: 2 }}>
+                    <Typography 
+                      variant="body2" 
+                      color={
+                        joinStatus.includes('Error') || joinStatus.includes('failed') 
+                          ? 'error' 
+                          : joinStatus.includes('successful') 
+                            ? 'success.main'
+                            : 'textSecondary'
+                      }
+                    >
+                      {joinStatus}
+                    </Typography>
+                  </Box>
+                )}
+              </>
+            )}
+          </DialogContent>
+          <DialogActions>
+            {joinStatus === "success_confirmed" ? (
+              <Button 
+                onClick={() => {
+                  setJoinStatus("");
+                  handleCloseJoinDialog();
+                }} 
+                color="primary"
+                variant="contained"
+                sx={{ mx: 'auto' }}
+              >
+                Close
+              </Button>
+            ) : (
+              <>
+                <Button onClick={handleCloseJoinDialog} color="secondary" disabled={joinLoading}>
+                  {isConnected === "none" ? "Close" : "Cancel"}
+                </Button>
+                {isConnected !== "none" && (
+                  <Button 
+                    onClick={handleJoinTest} 
+                    color="primary" 
+                    disabled={joinLoading || !nnsLedgerActor || !pullerActor}
+                    startIcon={joinLoading ? <CircularProgress size={20} /> : null}
+                  >
+                    {joinLoading ? 'Processing...' : 'Join Test'}
+                  </Button>
+                )}
+              </>
+            )}
           </DialogActions>
         </Dialog>
 

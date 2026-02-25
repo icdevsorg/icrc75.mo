@@ -1,17 +1,16 @@
 [dependencies]
-map9 = "https://github.com/ZhenyaUsenko/motoko-hash-map#v9.0.1@10b68f6ea8df5e72dfa4c07a50c8bb60a916c233"
+core = "2.0.0"
 map = "9.0.1"
-vector = "0.4.0"
+vector = "0.4.2"
 star = "0.1.1"
-icrc1-mo = "0.0.15"
+icrc1-mo = "0.2.0"
 candy = "0.3.1"
 stableheapbtreemap = "1.5.0"
-ovs-fixed = "0.1.2"
-timer-tool = "0.1.1"
-ic-certification = "0.1.3"
+ovs-fixed = "0.2.0"
+timer-tool = "0.2.0"
+ic-certification = "1.1.0"
 rep-indy-hash = "0.1.1"
-class-plus = "0.0.1"
-base = "0.14.4"
+class-plus = "0.2.0"
 
 [dev-dependencies]
 test = "2.0.0"
@@ -19,7 +18,10 @@ fuzz = "0.2.1"
 
 [package]
 name = "icrc75-mo"
-version = "0.2.0"
+version = "0.3.0"
 description = "icrc75 for motoko"
 repository = "https://github.com/icdevsorg/icrc75.mo"
 keywords = [ "icrc75", "lists", "rbac" ]
+
+[toolchain]
+moc = "1.1.0"

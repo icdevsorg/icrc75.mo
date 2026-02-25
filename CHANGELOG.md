@@ -1,3 +1,9 @@
+v0.3.0
+
+- References updates to latest
+- Update to Core
+- Probable breaking changes
+
 v0.2.0
 
 - Added metadata as a DataItemMap to all List Items

@@ -9,6 +9,7 @@ import CertTree "mo:ic-certification/CertTree";
 import Candid "mo:candy/candid";
 import ClassPlus "mo:class-plus";
 import D "mo:base/Debug";
+import TT "mo:timer-tool";
 
 
 
@@ -16,35 +17,28 @@ import D "mo:base/Debug";
 import ICRC75 "..";
 import Service "../service"
 
-shared ({ caller = _originalCaller }) actor class ICRC75List  (
+shared ({ caller = _originalCaller }) persistent actor class ICRC75List  (
     init_args75 : ?ICRC75.InitArgs
 ) = this{
 
-  let Set = ICRC75.Set;
-  let Vector = ICRC75.Vector;
+  transient let Set = ICRC75.Set;
+  transient let Vector = ICRC75.Vector;
 
   stable var _owner = _originalCaller;
 
-  let initManager = ClassPlus.ClassPlusInitializationManager(_owner, Principal.fromActor(this), true);
+  transient let initManager = ClassPlus.ClassPlusInitializationManager(_owner, Principal.fromActor(this), true);
 
     
-    stable var icrc10 : Set.Set<(ICRC10Record)> = Set.new();
+    stable var icrc10 : ICRC75.Set.Set<(ICRC10Record)> = ICRC75.Set.empty();
 
     type ICRC10Record = {name:Text; url:Text};
 
-    func icrc10EQ(a: ICRC10Record, b: ICRC10Record): Bool{
-      (a.name == b.name and a.url == b.url);
+    func icrc10Compare(a: ICRC10Record, b: ICRC10Record): {#less; #equal; #greater}{
+      switch(Text.compare(a.name, b.name)){
+        case(#equal) Text.compare(a.url, b.url);
+        case(other) other;
+      };
     };
-
-    func icrc10Hash32(a: ICRC10Record) : Nat32 {
-      var nameHash = Text.hash("icrc10");
-      nameHash +%= Text.hash(a.name);
-      nameHash +%= Text.hash("--");
-      nameHash +%= Text.hash(a.url);
-      nameHash;
-    };
-
-    let icrc10Hash = (icrc10Hash32, icrc10EQ);
 
     stable let fakeLedger = Vector.new<ICRC75.Value>(); //maintains insertion order
 
@@ -65,28 +59,52 @@ shared ({ caller = _originalCaller }) actor class ICRC75List  (
 
     stable var icrc75MigrationState : ICRC75.State = ICRC75.Migration.migration.initialState;
 
+    // TimerTool state and initialization
+    stable var ttMigrationState : TT.State = TT.initialState();
+
+    transient let tt = TT.Init({
+      org_icdevs_class_plus_manager = initManager;
+      initialState = ttMigrationState;
+      args = null;
+      pullEnvironment = ?(func() : TT.Environment {
+        {
+          advanced = null;
+          reportExecution = null;
+          reportError = null;
+          syncUnsafe = null;
+          reportBatch = null;
+        }
+      });
+      onInitialize = ?(func(newClass: TT.TimerTool) : async* () {
+        D.print("TimerTool initialized");
+        newClass.initialize<system>();
+      });
+      onStorageChange = func(state: TT.State) {
+        ttMigrationState := state;
+      };
+    });
 
     stable let cert_store : CertTree.Store = CertTree.newStore();
-    let ct = CertTree.Ops(cert_store);
+    transient let ct = CertTree.Ops(cert_store);
 
     private func getCertStore() : CertTree.Store {
       
       return cert_store;
     };
 
-    let icrc75 = ICRC75.Init<system>({
-      manager = initManager;
+    transient let icrc75 = ICRC75.Init({
+      org_icdevs_class_plus_manager = initManager;
       initialState = icrc75MigrationState;
       args= init_args75;
       pullEnvironment = ?(func() : ICRC75.Environment{
         {
           advanced = null;
-          tt= null;
+          org_icdevs_timer_tool = tt();
           updated_certification = null; //called when a certification has been made
           get_certificate_store = ?getCertStore; //needed to pass certificate store to the class
           addRecord = ?fakeledgerAddRecord;
           icrc10_register_supported_standards = func(a : ICRC10Record): Bool {
-            Set.add(icrc10, icrc10Hash, a);
+            ignore ICRC75.Set.add(icrc10, icrc10Compare, a);
             true;
           };
         }
@@ -101,7 +119,7 @@ shared ({ caller = _originalCaller }) actor class ICRC75List  (
 
 
 
-    Set.add(icrc10, icrc10Hash, ({name ="ICRC-10"; url = "https://github.com/dfinity/ICRC/ICRCs/ICRC-10"}));
+    ignore ICRC75.Set.add(icrc10, icrc10Compare, ({name ="ICRC-10"; url = "https://github.com/dfinity/ICRC/ICRCs/ICRC-10"}));
 
 
   
@@ -115,7 +133,7 @@ shared ({ caller = _originalCaller }) actor class ICRC75List  (
   };
 
   public query func icrc10_supported_standards() : async [ICRC10Record] {
-    return Set.toArray(icrc10);
+    return ICRC75.Set.toArray(icrc10);
   };
 
   // Deposit cycles into this canister.
@@ -194,19 +212,15 @@ shared ({ caller = _originalCaller }) actor class ICRC75List  (
     return icrc75().retrieve_token(msg.caller, token);
   };
 
-  public shared(msg) func auto_init() : async () {
-    icrc75().initTimer<system>();
-    return;
-  };
-
-  public query(msg) func getLedger() : async [ICRC75.Value] {
+  public query(_msg) func getLedger() : async [ICRC75.Value] {
     return Vector.toArray(fakeLedger);
   };
 
-  ignore Timer.setTimer<system>(#nanoseconds(0), func() : async(){
-    let thisActor : actor{
-      auto_init : () -> async ();
-    } = actor(Principal.toText(Principal.fromActor(this)));
-    await thisActor.auto_init();
-  });
+  public query func icrc75_get_icrc85_stats() : async {
+    activeActions: Nat;
+    lastActionReported: ?Nat;
+    nextCycleActionId: ?Nat;
+  } {
+    return icrc75().get_icrc85_stats();
+  };
 };

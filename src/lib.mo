@@ -1,24 +1,22 @@
-import Blob "mo:base/Blob";
-import Array "mo:base/Array";
+import Blob "mo:core/Blob";
+import Array "mo:core/Array";
 import Buffer "mo:base/Buffer";
 import CertifiedData "mo:base/CertifiedData";
-import Cycles "mo:base/ExperimentalCycles";
-import D "mo:base/Debug";
-import Error "mo:base/Error";
-import Int "mo:base/Int";
-import Iter "mo:base/Iter";
-import Nat "mo:base/Nat";
-import Nat8 "mo:base/Nat8";
-import Principal "mo:base/Principal";
-import Text "mo:base/Text";
+import D "mo:core/Debug";
+import Int "mo:core/Int";
+import Iter "mo:core/Iter";
+import Nat "mo:core/Nat";
+import Nat8 "mo:core/Nat8";
+import Order "mo:core/Order";
+import Principal "mo:core/Principal";
+import Runtime "mo:core/Runtime";
+import Text "mo:core/Text";
 import Time "mo:base/Time";
-import List "mo:base/List";
-import Timer "mo:base/Timer";
+import List "mo:core/List";
 import CertTree "mo:ic-certification/CertTree";
 
 import TT "mo:timer-tool";
-import ovsfixed "mo:ovs-fixed";
-import Star "mo:star/star";
+import OVSFixed "mo:ovs-fixed";
 import RepIndy "mo:rep-indy-hash";
 
 import MigrationLib "./migrations";
@@ -28,7 +26,6 @@ import ClassPlusLib "mo:class-plus";
 import Vector "mo:vector";
 import ICRC16 "mo:candy/types";
 import ICRC16Conversion "mo:candy/icrc16/conversion";
-import Value "mo:cbor/Value";
 
 
 import Service "./service";
@@ -105,6 +102,17 @@ module {
   public type DataItemMap = MigrationTypes.Current.DataItemMap;
   public type DataItemMapItem = MigrationTypes.Current.DataItemMapItem;
 
+  // ICRC-85 Open Value Sharing types
+  public type ICRC85State = MigrationTypes.Current.ICRC85State;
+  public type ICRC85Environment = MigrationTypes.Current.ICRC85Environment;
+  public type TimerTool = MigrationTypes.Current.TimerTool;
+
+  // ICRC-85 Constants
+  let ONE_DAY = 86_400_000_000_000; // 1 day in nanoseconds
+  let ONE_XDR_OF_CYCLES = 1_000_000_000_000;  // 1 XDR worth of cycles (~1T)
+  let ICRC85_NAMESPACE = "org.icdevs.icrc85.icrc75";
+  let ICRC85_TIMER_NAMESPACE = "icrc85:ovs:shareaction:icrc75";
+
 
   /// # `initialState`
   ///
@@ -130,7 +138,7 @@ module {
   ///
   /// `#v0_1_0(#id)`: A unique identifier representing the version of the  state format currently in use, as defined by the `State` data type.
   public let Migration = MigrationLib;
-  public let currentStateVersion = #v0_2_0(#id);
+  public let currentStateVersion = #v0_3_0(#id);
   public let init = Migration.migrate;
 
   public let migrate = Migration.migrate;
@@ -143,33 +151,108 @@ module {
 
  
 
-  public let listItemHash = MigrationTypes.Current.listItemHash;
+  public let listItemCompare = MigrationTypes.Current.listItemCompare;
 
+  /// ClassPlus-compatible initialization function
+  ///
+  /// This function wraps the ICRC75 class with ClassPlus for proper async
+  /// initialization, enabling automatic ICRC-85 timer setup.
+  ///
+  /// Example:
+  /// ```motoko
+  /// transient let icrc75 = ICRC75.Init({
+  ///   org_icdevs_class_plus_manager = manager;
+  ///   initialState = icrc75_migration_state;
+  ///   args = ?icrc75Args;
+  ///   pullEnvironment = ?getEnvironment;
+  ///   onInitialize = null;
+  ///   onStorageChange = func(state: ICRC75.State) {
+  ///     icrc75_migration_state := state;
+  ///   };
+  /// });
+  /// ```
 
-  public func Init<system>(config : {
-    manager: ClassPlusLib.ClassPlusInitializationManager;
+  /// Type for Init function arguments
+  public type InitFunctionArgs = {
+    org_icdevs_class_plus_manager: ClassPlusLib.ClassPlusInitializationManager;
     initialState: State;
     args : ?InitArgs;
     pullEnvironment : ?(() -> Environment);
     onInitialize: ?(ICRC75 -> async*());
-    onStorageChange : ((State) ->())
-  }) :()-> ICRC75{
+    onStorageChange : ((State) ->());
+  };
 
-    D.print("Subscriber Init");
-    switch(config.pullEnvironment){
-      case(?val) {
-        D.print("pull environment has value");
-        
+  /// Type for Mixin function arguments (subset of InitFunctionArgs without initialState/onStorageChange)
+  public type MixinFunctionArgs = {
+    org_icdevs_class_plus_manager: ClassPlusLib.ClassPlusInitializationManager;
+    args : ?InitArgs;
+    pullEnvironment : ?(() -> Environment);
+    onInitialize: ?(ICRC75 -> async*());
+    /// Optional callback for validating list property changes (create, rename, etc.)
+    canChangeProperty: CanChangeProperty;
+    /// Optional callback for validating list membership changes
+    canChangeMembership: CanChangeMembership;
+  };
+
+  public func Init(config : InitFunctionArgs) : () -> ICRC75 {
+    
+    D.print("ICRC75 Init");
+    
+    let wrappedOnInitialize = func(instance: ICRC75) : async* () {
+
+      // Configuration for OVS
+      let ovsConfig : OVSFixed.InitArgs = {
+          namespace = ICRC85_NAMESPACE;
+          publicNamespace = ICRC85_TIMER_NAMESPACE;
+          baseCycles = ONE_XDR_OF_CYCLES;
+          actionDivisor = 1;
+          actionMultiplier = 100_000_000;
+          maxCycles = ONE_XDR_OF_CYCLES * 100;
+          initialWait = ?(ONE_DAY * 7); 
+          period = null; // default 30 days
+          asset = null; //default Cycles
+          platform = null;  //default ICP
+          resetAtEndOfPeriod = true;
       };
-      case(null) {
-        D.print("pull environment is null");
+
+      //icrc75 needs its own classmanager
+      var org_icdevs_class_plus_manager = ClassPlusLib.ClassPlusInitializationManager<system>(instance.caller, instance.canister, true);
+
+      instance.org_icdevs_class_plus_manager := ?org_icdevs_class_plus_manager;
+
+      func getOVSEnv() : OVSFixed.Environment {
+        {
+            var org_icdevs_timer_tool : ?TT.TimerTool = ?instance.environment.org_icdevs_timer_tool;
+            var collector = do?{instance.environment.advanced!.icrc85.collector!};
+            advanced = do?{instance.environment.advanced!.icrc85.advanced!};
+        }
       };
-    };  
-    ClassPlusLib.ClassPlus<system,
+
+      instance.org_icdevs_ovs_fixed := ?OVSFixed.Init({
+          org_icdevs_class_plus_manager = org_icdevs_class_plus_manager;
+          args = ?ovsConfig;
+          pullEnvironment = ?getOVSEnv;
+          onInitialize = null;
+          initialState = instance.state.org_icdevs_ovs_fixed_state;
+          onStorageChange = func(_state : OVSFixed.State){
+            instance.state.org_icdevs_ovs_fixed_state := _state;
+          };
+      });
+      
+      switch(config.onInitialize){
+        case(?cb) await* cb(instance);
+        case(null) {};
+      };
+    };
+
+    ClassPlusLib.ClassPlus<
       ICRC75, 
       State,
       InitArgs,
-      Environment>({config with constructor = ICRC75}).get;
+      Environment>({config with 
+        constructor = ICRC75;
+        onInitialize = ?wrappedOnInitialize
+      }).get;
   };
 
 
@@ -182,7 +265,10 @@ module {
   ///     - canister: `Principal` - The principal of the canister where this class is used.
   ///     - environment: `Environment` - The environment settings for various ICRC standards-related configurations.
   /// - Returns: No explicit return value as this is a class constructor function.
-  public class ICRC75(stored: ?State, caller: Principal, canister: Principal, args: ?InitArgs, environment_passed: ?Environment, storageChanged: (State) -> ()){
+  public class ICRC75(stored: ?State, _caller: Principal, _canister: Principal, args: ?InitArgs, environment_passed: ?Environment, storageChanged: (State) -> ()){
+
+    public let caller = _caller;
+    public let canister = _canister;
 
     let debug_channel= {
       var announce = true;
@@ -205,14 +291,17 @@ module {
       };
     };
 
-    let environment = switch(environment_passed){
+    public let environment = switch(environment_passed){
       case(?val) val;
       case(null) {
-        D.trap("Environment is required");
+        Runtime.trap("Environment is required");
       };
     };
 
     debug d(debug_channel.announce, debug_show(("ICRC75 initializing", canister)));
+
+    public var org_icdevs_ovs_fixed : ?(() -> OVSFixed.OVS) = null; //initialized later
+    public var org_icdevs_class_plus_manager : ?ClassPlusLib.ClassPlusInitializationManager = null; //initialized later
 
     /// # State
     ///
@@ -225,26 +314,21 @@ module {
     /// let initialState = ICRC75.initialState();
     /// let currentState = #v0_1_0(#data(initialState));
     /// ```
-    var state : CurrentState = switch(stored){
+    public var state : CurrentState = switch(stored){
       case(null) {
         debug d(debug_channel.announce, debug_show(("ICRC75 initializing with initialState")));
-        let #v0_2_0(#data(foundState)) = init(initialState(), currentStateVersion, args, caller);
+        let #v0_3_0(#data(foundState)) = init(initialState(), currentStateVersion, args, caller);
         foundState;
       };
       case(?val) {
-        let #v0_2_0(#data(foundState)) = init(val, currentStateVersion, args, caller);
+        let #v0_3_0(#data(foundState)) = init(val, currentStateVersion, args, caller);
         foundState;
       };
     };
 
 
 
-    storageChanged(#v0_2_0(#data(state)));
-
-    public func initTimer<system>() : () {
-      debug d(debug_channel.announce, debug_show(("ICRC75 in init starting timer tool")));
-      ensureTT<system>();
-    };
+    storageChanged(#v0_3_0(#data(state)));
 
     
     /// # `get_state`
@@ -333,50 +417,16 @@ module {
     };
 
 
-    let OneDay =  86_400_000_000_000;
-
-    ///MARK: actor mangement
-
-    var _haveTimer : ?Bool = null;
-
-
-
-    private func ensureTT<system>(){
-      let haveTimer = switch(_haveTimer){
-        case(?val) val;
-        case(null){
-           let result = (switch(environment.advanced){
-              case(?val) {
-                switch(val.icrc85.kill_switch){
-                  case(null) true;
-                  case(?val) val;
-                };
-              };
-              case(null) true;
-            });
-          _haveTimer := ?result;
-          result;
-        };
-      };
-      debug d(debug_channel.announce, debug_show(("ensureTT", haveTimer)));
-      if(haveTimer == true){
-        ignore tt<system>();
-      };
-    };
-
     /// Updates actor information such as transaction and query variables.
     /// - Parameters:
     ///     - request: `[UpdateLedgerInfoRequest]` - A list of requests containing the updates to be applied to the ledger.
     /// - Returns: `[Bool]` - An array of booleans indicating the success of each update request.
     public func updateProperties<system>(caller : Principal, request: ManageRequest) : ManageResponse{
 
-      //make sure tt is set
-      ensureTT<system>();
       if(request.size() > state.metadata.maxUpdate){
         return [?#Err(#TooManyRequests)];
       };
-      state.icrc85.activeActions := state.icrc85.activeActions + 1;
-      ignore ensureCycleShare<system>();
+      state.org_icdevs_ovs_fixed_state.activeActions := state.org_icdevs_ovs_fixed_state.activeActions + 1;
       if(state.owner != caller){
         return [?#Err(#Unauthorized)];
       };
@@ -426,7 +476,7 @@ module {
     /// ```
     public func get_stats() : Stats {
       return {
-        cycleShareTimerID = state.icrc85.nextCycleActionId;
+        cycleShareTimerID = state.org_icdevs_ovs_fixed_state.nextCycleActionId;
         namespaceStoreCount = BTree.size(state.namespaceStore);
         memberIndexCount = Map.size(state.memberIndex);
         permissionsIndexCount  = Map.size(state.permissionsIndex);
@@ -435,25 +485,7 @@ module {
         defaultTake = state.metadata.defaultTake;
         permittedDrift = state.metadata.permittedDrift;
         owner = state.owner;
-        tt = query_tt().getStats();
-        //todo: return timer-tool stats
-        
-      };
-    };
-
-    private func query_tt() : TT.TimerTool {
-      switch(tt_){
-        case(?val) val;
-        case(null){
-          debug d(debug_channel.announce, "No timer tool set up");
-          let foundClass = switch(environment.tt){
-            case(?val) val;
-            case(null){
-              D.trap("No timer tool yet");
-            };
-          };
-          foundClass;
-        };
+        tt = environment.org_icdevs_timer_tool.getStats();
       };
     };
 
@@ -471,26 +503,26 @@ module {
     };
 
     private func fileMember(member : MigrationTypes.Current.ListItem, metadata : ?MigrationTypes.Current.ICRC16Map, record: NamespaceRecord) : () {
-      ignore Map.add(record.members, listItemHash, member, metadata);
-      let found = switch(Map.get(state.memberIndex, listItemHash, member)){
+      ignore Map.add(record.members, listItemCompare, member, metadata);
+      let found = switch(Map.get(state.memberIndex, listItemCompare, member)){
           case(?val) val;
           case(null){
-            let newSet = Set.new<Text>();
-            ignore Map.put(state.memberIndex, listItemHash, member, newSet);
+            let newSet = Set.empty<Text>();
+            ignore Map.add(state.memberIndex, listItemCompare, member, newSet);
             newSet;
           };
         };
-      Set.add(found, Set.thash, record.namespace);
+      ignore Set.add(found, Text.compare, record.namespace);
       
     };
 
     private func removeMember(member : MigrationTypes.Current.ListItem, record: NamespaceRecord) : () {
-      Map.delete(record.members, listItemHash, member);
-      let found = switch(Map.get(state.memberIndex, listItemHash, member)){
+      ignore Map.delete(record.members, listItemCompare, member);
+      let found = switch(Map.get(state.memberIndex, listItemCompare, member)){
           case(?val) val;
           case(null) return;
         };
-      Set.delete(found, Set.thash, record.namespace);
+      ignore Set.delete(found, Text.compare, record.namespace);
     };
 
 
@@ -500,20 +532,18 @@ module {
 
     public func manage_list_membership(caller: Principal, request: Service.ManageListMembershipRequest, canChange: CanChangeMembership) : async* ManageListMembershipResponse {
 
-      ensureTT<system>();
       if(request.size() > state.metadata.maxUpdate){
         return [?#Err(#TooManyRequests)];
       };
-      state.icrc85.activeActions := state.icrc85.activeActions + 1;
-      ignore ensureCycleShare<system>();
+      state.org_icdevs_ovs_fixed_state.activeActions := state.org_icdevs_ovs_fixed_state.activeActions + 1;
       //check permissions
-      let cache = Map.new<Text, NamespaceRecord>();
+      let cache = Map.empty<Text, NamespaceRecord>();
 
       let results = Buffer.Buffer<ManageListMembershipResult>(1);
       
       label proc for(thisItem in request.vals()){
         //check permissions
-        let foundCache = switch(Map.get(cache, Map.thash, thisItem.list # Principal.toText(caller))){
+        let foundCache = switch(Map.get(cache, Text.compare, thisItem.list # Principal.toText(caller))){
           case(?cacheItem) cacheItem;
           case(null){
             let found = switch(BTree.get(state.namespaceStore, Text.compare, thisItem.list)){
@@ -524,16 +554,16 @@ module {
               };
             };
             
-            if(Set.has<ListItem>(found.permissions.admin, listItemHash, #Identity(caller))){
+            if(Set.contains<ListItem>(found.permissions.admin, listItemCompare, #Identity(caller))){
                 //cache the record
-                ignore Map.put<Text, NamespaceRecord>(cache, Map.thash, thisItem.list # Principal.toText(caller), found);
-            } else if(Set.has<ListItem>(found.permissions.write, listItemHash, #Identity(caller))) {
+                ignore Map.add<Text, NamespaceRecord>(cache, Text.compare, thisItem.list # Principal.toText(caller), found);
+            } else if(Set.contains<ListItem>(found.permissions.write, listItemCompare, #Identity(caller))) {
                 //cache the record
-                ignore Map.put(cache, Map.thash, thisItem.list # Principal.toText(caller), found);
+                ignore Map.add(cache, Text.compare, thisItem.list # Principal.toText(caller), found);
             } else if(findIdentityInCollectionList(caller, found.permissions.admin)){
-              ignore Map.put(cache, Map.thash, thisItem.list # Principal.toText(caller), found);
+              ignore Map.add(cache, Text.compare, thisItem.list # Principal.toText(caller), found);
             } else if(findIdentityInCollectionList(caller, found.permissions.write)){
-              ignore Map.put(cache, Map.thash, thisItem.list # Principal.toText(caller), found);
+              ignore Map.add(cache, Text.compare, thisItem.list # Principal.toText(caller), found);
             } else{
               results.add(?#Err(#Unauthorized));
               continue proc;
@@ -556,7 +586,7 @@ module {
         };
 
         if(actionText == "add"){
-          switch(Map.get(foundCache.members, listItemHash, listItem)){
+          switch(Map.get(foundCache.members, listItemCompare, listItem)){
             case(?val){
               results.add(?#Err(#Exists));
               continue proc;
@@ -564,7 +594,7 @@ module {
             case(null){};
           };
         } else if(actionText == "remove"){ 
-          switch(Map.get(foundCache.members, listItemHash, listItem)){
+          switch(Map.get(foundCache.members, listItemCompare, listItem)){
             case(null){
               results.add(?#Err(#NotFound));
               continue proc;
@@ -572,7 +602,7 @@ module {
             case(?val){};
           };
         } else if(actionText == "update"){
-          switch(Map.get(foundCache.members, listItemHash, listItem)){
+          switch(Map.get(foundCache.members, listItemCompare, listItem)){
             case(null){
               results.add(?#Err(#NotFound));
               continue proc;
@@ -595,12 +625,12 @@ module {
                             };
                             newMap.add(thisItem);
                           };
-                          ignore Map.put(foundCache.members, listItemHash, listItem, ?Buffer.toArray<DataItemMapItem>(newMap));
+                          ignore Map.add(foundCache.members, listItemCompare, listItem, ?Buffer.toArray<DataItemMapItem>(newMap));
                         };
                         case(null){
                           //create a new map with this value
                           let newMap = Buffer.Buffer<DataItemMap>(1);
-                          ignore Map.put(foundCache.members, listItemHash, listItem, ?[(mod.0, metadataValue)]);
+                          ignore Map.add(foundCache.members, listItemCompare, listItem, ?[(mod.0, metadataValue)]);
                         };
                       };
                     }; //remove the item
@@ -616,9 +646,9 @@ module {
                             newMap.add(thisItem);
                           };
                           if(newMap.size() == 0){
-                            ignore Map.put(foundCache.members, listItemHash, listItem, null);
+                            ignore Map.add(foundCache.members, listItemCompare, listItem, null);
                           } else {
-                            ignore Map.put(foundCache.members, listItemHash, listItem, ?Buffer.toArray<DataItemMapItem>(newMap));
+                            ignore Map.add(foundCache.members, listItemCompare, listItem, ?Buffer.toArray<DataItemMapItem>(newMap));
                           };
                         };
                         case(null){
@@ -743,7 +773,7 @@ module {
           fileMember(listItem, metadata, foundCache);
         } else if(actionText == "remove") {
           removeMember(listItem, foundCache);
-          ignore Map.remove(foundCache.members, listItemHash, listItem);
+          ignore Map.remove(foundCache.members, listItemCompare, listItem);
         } else {
           switch(modifier){
             case(?mod){
@@ -784,7 +814,7 @@ module {
       };
 
       //check permissions
-      let cache = Map.new<Text, NamespaceRecord>();
+      let cache = Map.empty<Text, NamespaceRecord>();
 
       let results = Buffer.Buffer<ManageListMembershipResult>(1);
 
@@ -792,7 +822,7 @@ module {
       
       label proc for(thisItem in request.vals()){
         //check permissions
-        let foundCache = switch(Map.get(cache, Map.thash, thisItem.list # Principal.toText(caller))){
+        let foundCache = switch(Map.get(cache, Text.compare, thisItem.list # Principal.toText(caller))){
           case(?cacheItem) cacheItem;
           case(null){
             let found = switch(BTree.get(state.namespaceStore, Text.compare, thisItem.list)){
@@ -804,16 +834,16 @@ module {
 
             
             
-            if(Set.has<ListItem>(found.permissions.admin, listItemHash, #Identity(caller))){
+            if(Set.contains<ListItem>(found.permissions.admin, listItemCompare, #Identity(caller))){
                 //cache the record
-                ignore Map.put<Text, NamespaceRecord>(cache, Map.thash, thisItem.list # Principal.toText(caller), found);
-            } else if(Set.has<ListItem>(found.permissions.write, listItemHash, #Identity(caller))) {
+                ignore Map.add<Text, NamespaceRecord>(cache, Text.compare, thisItem.list # Principal.toText(caller), found);
+            } else if(Set.contains<ListItem>(found.permissions.write, listItemCompare, #Identity(caller))) {
                 //cache the record
-                ignore Map.put(cache, Map.thash, thisItem.list # Principal.toText(caller), found);
+                ignore Map.add(cache, Text.compare, thisItem.list # Principal.toText(caller), found);
             } else if(findIdentityInCollectionList(caller, found.permissions.admin)){
-              ignore Map.put(cache, Map.thash, thisItem.list # Principal.toText(caller), found);
+              ignore Map.add(cache, Text.compare, thisItem.list # Principal.toText(caller), found);
             } else if(findIdentityInCollectionList(caller, found.permissions.write)){
-              ignore Map.put(cache, Map.thash, thisItem.list # Principal.toText(caller), found);
+              ignore Map.add(cache, Text.compare, thisItem.list # Principal.toText(caller), found);
             } else{
               return #Err("Principal does not have correct permissions" # debug_show(("list", thisItem.list, "caller", caller)));
               results.add(?#Err(#Unauthorized));
@@ -835,20 +865,18 @@ module {
         };
       };
 
-      return #Ok(Text.join("\n", Buffer.toArray<Text>(descriptionText).vals()));
+      return #Ok(Text.join(Buffer.toArray<Text>(descriptionText).vals(), "\n"));
     };
 
     public func manage_list_properties(caller: Principal, request: ManageListPropertyRequest, canChange: CanChangeProperty) : async* ManageListPropertyResponse {
 
-      ensureTT<system>();
       if(request.size() > state.metadata.maxUpdate){
         return [?#Err(#TooManyRequests)];
       };
-      state.icrc85.activeActions := state.icrc85.activeActions + 1;
-      ignore ensureCycleShare<system>();
+      state.org_icdevs_ovs_fixed_state.activeActions := state.org_icdevs_ovs_fixed_state.activeActions + 1;
       //check permissions
-      let cache = Map.new<Text, NamespaceRecord>();
-      let cachePermissions = Map.new<Text, NamespaceRecord>();
+      let cache = Map.empty<Text, NamespaceRecord>();
+      let cachePermissions = Map.empty<Text, NamespaceRecord>();
       let results = Buffer.Buffer<ManageListPropertyResult>(1);
       
       label proc for(thisItem in request.vals()){
@@ -872,14 +900,14 @@ module {
 
         //check permissions
         let search = if(actionText == "permissions"){
-          switch(Map.get(cachePermissions, Map.thash, thisItem.list # Principal.toText(caller))){
+          switch(Map.get(cachePermissions, Text.compare, thisItem.list # Principal.toText(caller))){
             case(null){
-              Map.get(cache, Map.thash, thisItem.list # Principal.toText(caller))
+              Map.get(cache, Text.compare, thisItem.list # Principal.toText(caller))
             };
             case(?cacheItem) ?cacheItem;
             };
         } else {
-          Map.get(cache, Map.thash, thisItem.list # Principal.toText(caller))
+          Map.get(cache, Text.compare, thisItem.list # Principal.toText(caller))
         };
 
         if(actionText != "create"){
@@ -894,16 +922,16 @@ module {
                 };
               };
               
-              if(Set.has<ListItem>(found.permissions.admin, listItemHash, #Identity(caller))){
+              if(Set.contains<ListItem>(found.permissions.admin, listItemCompare, #Identity(caller))){
                   //cache the record
-                  ignore Map.put<Text,NamespaceRecord>(cache, Map.thash, thisItem.list # Principal.toText(caller), found);
-              } else if(Set.has<ListItem>(found.permissions.permissions, listItemHash, #Identity(caller))) {
+                  ignore Map.add<Text,NamespaceRecord>(cache, Text.compare, thisItem.list # Principal.toText(caller), found);
+              } else if(Set.contains<ListItem>(found.permissions.permissions, listItemCompare, #Identity(caller))) {
                   //cache the record
-                  ignore Map.put(cachePermissions, Map.thash, thisItem.list # Principal.toText(caller), found);
+                  ignore Map.add(cachePermissions, Text.compare, thisItem.list # Principal.toText(caller), found);
               } else if(findIdentityInCollectionList(caller, found.permissions.admin)){
-                ignore Map.put<Text,NamespaceRecord>(cache, Map.thash, thisItem.list # Principal.toText(caller), found);
+                ignore Map.add<Text,NamespaceRecord>(cache, Text.compare, thisItem.list # Principal.toText(caller), found);
               } else if(findIdentityInCollectionList(caller, found.permissions.permissions)){
-                ignore Map.put<Text,NamespaceRecord>(cachePermissions, Map.thash, thisItem.list # Principal.toText(caller), found);
+                ignore Map.add<Text,NamespaceRecord>(cachePermissions, Text.compare, thisItem.list # Principal.toText(caller), found);
               } else {
                 //check action for permission
                 results.add(?#Err(#Unauthorized));
@@ -1177,10 +1205,13 @@ module {
         };
 
 
+        D.print(debug_show(("canChange callback check", (switch(canChange){case(null) false; case(_) true;}))));
         let (finalTrx, finalTrxTop) = switch(canChange){
           case(?interceptor){
+            D.print("Calling interceptor");
             switch(interceptor){
               case(#Sync(aFunc)){
+                D.print("Calling sync callback");
                 switch(aFunc<system>(#Map(Buffer.toArray<(Text,Value)>(trx)),?#Map(Buffer.toArray<(Text,Value)>(trxTop)))){
                   case(#ok(val)) val;
                   case(#err(err)){
@@ -1225,18 +1256,18 @@ module {
             let record = {
               namespace = thisItem.list;
               permissions = {
-                read = Set.new<MigrationTypes.Current.ListItem>();
-                write = Set.new<MigrationTypes.Current.ListItem>();
-                permissions = Set.new<MigrationTypes.Current.ListItem>();
+                read = Set.empty<MigrationTypes.Current.ListItem>();
+                write = Set.empty<MigrationTypes.Current.ListItem>();
+                permissions = Set.empty<MigrationTypes.Current.ListItem>();
                 admin = switch(val.admin){
                   case(?#Identity(val)){
-                    Set.fromIter<ListItem>( [#Identity(val)].vals(), listItemHash);
+                    Set.fromIter<ListItem>( [#Identity(val)].vals(), listItemCompare);
                   };
                   case(?#List(val)){
-                    Set.fromIter<ListItem>([#List(val)].vals(), listItemHash);
+                    Set.fromIter<ListItem>([#List(val)].vals(), listItemCompare);
                   };
                   case(null){
-                    Set.fromIter<ListItem>([#Identity(caller):ListItem].vals(), listItemHash);
+                    Set.fromIter<ListItem>([#Identity(caller):ListItem].vals(), listItemCompare);
                   };
                   case(_){
                     results.add(?#Err(#IllegalAdmin));
@@ -1244,7 +1275,7 @@ module {
                   };
                 };
               };
-              members = Map.fromIter<ListItem, ?DataItemMap>(val.members.vals(), listItemHash);
+              members = Map.fromIter<ListItem, ?DataItemMap>(val.members.vals(), listItemCompare);
               metadata = val.metadata;
             };
             addNamespaceToStore(record);
@@ -1292,13 +1323,13 @@ module {
             let newRecord = {
               oldRecord with metadata = switch(val.value){
                 case(?aval){
-                  let aMap = Map.fromIter<Text, DataItem>(oldRecord.metadata.vals(), Map.thash);
-                  ignore Map.put(aMap, Map.thash, val.key, aval);
+                  let aMap = Map.fromIter<Text, DataItem>(oldRecord.metadata.vals(), Text.compare);
+                  ignore Map.add(aMap, Text.compare, val.key, aval);
                   Map.toArray(aMap);
                 };
                 case(null){
-                  let aMap = Map.fromIter<Text, DataItem>(oldRecord.metadata.vals(), Map.thash);
-                  ignore Map.remove(aMap, Map.thash, val.key);
+                  let aMap = Map.fromIter<Text, DataItem>(oldRecord.metadata.vals(), Text.compare);
+                  ignore Map.remove(aMap, Text.compare, val.key);
                   Map.toArray(aMap);
                 };
               };
@@ -1326,9 +1357,9 @@ module {
                   };
                   case(_){}
                 };
-                if(Set.has<ListItem>(oldRecord.permissions.read, listItemHash, newItem : ListItem) == false){
+                if(Set.contains<ListItem>(oldRecord.permissions.read, listItemCompare, newItem : ListItem) == false){
                   
-                    Set.add(oldRecord.permissions.read, listItemHash, newItem);
+                    ignore Set.add(oldRecord.permissions.read, listItemCompare, newItem);
                     addPermissionIndex(thisItem.list, newItem);
                 
                 } else {};
@@ -1346,20 +1377,20 @@ module {
                   };
                   case(_){}
                 };
-                if(Set.has(oldRecord.permissions.read, listItemHash, removeItem)){
-                    ignore Set.remove(oldRecord.permissions.read, listItemHash, removeItem);
+                if(Set.contains(oldRecord.permissions.read, listItemCompare, removeItem)){
+                    ignore Set.remove(oldRecord.permissions.read, listItemCompare, removeItem);
                 } else{
                     results.add(?(#Err(#NotFound)));
                     continue proc;
                 };
                 if(
-                  Set.has(oldRecord.permissions.read, listItemHash,removeItem)== false
+                  Set.contains(oldRecord.permissions.read, listItemCompare,removeItem)== false
                   and
-                  Set.has(oldRecord.permissions.write, listItemHash,removeItem)== false
+                  Set.contains(oldRecord.permissions.write, listItemCompare,removeItem)== false
                   and
-                  Set.has(oldRecord.permissions.admin, listItemHash,removeItem)== false
+                  Set.contains(oldRecord.permissions.admin, listItemCompare,removeItem)== false
                   and
-                  Set.has(oldRecord.permissions.permissions, listItemHash,removeItem)== false
+                  Set.contains(oldRecord.permissions.permissions, listItemCompare,removeItem)== false
                 ){
                   removePermissionFromIndex(thisItem.list, [removeItem].vals());
                 };
@@ -1376,9 +1407,9 @@ module {
                   };
                   case(_){}
                 };
-                if(Set.has(oldRecord.permissions.write, listItemHash, newItem) == false){
+                if(Set.contains(oldRecord.permissions.write, listItemCompare, newItem) == false){
                   
-                  Set.add(oldRecord.permissions.write, listItemHash, newItem);
+                  ignore Set.add(oldRecord.permissions.write, listItemCompare, newItem);
                   addPermissionIndex(thisItem.list, newItem);
                 } else {};
               };
@@ -1396,19 +1427,19 @@ module {
                   };
                   case(_){}
                 };
-                if(Set.has(oldRecord.permissions.write, listItemHash, removeItem)){
-                    ignore Set.remove(oldRecord.permissions.write, listItemHash,removeItem);
+                if(Set.contains(oldRecord.permissions.write, listItemCompare, removeItem)){
+                    ignore Set.remove(oldRecord.permissions.write, listItemCompare,removeItem);
                 } else {
                   results.add(?(#Err(#NotFound)));
                 };
                 if(
-                  Set.has(oldRecord.permissions.read, listItemHash,removeItem)== false
+                  Set.contains(oldRecord.permissions.read, listItemCompare,removeItem)== false
                   and
-                  Set.has(oldRecord.permissions.write, listItemHash,removeItem)== false
+                  Set.contains(oldRecord.permissions.write, listItemCompare,removeItem)== false
                   and
-                  Set.has(oldRecord.permissions.admin, listItemHash,removeItem)== false
+                  Set.contains(oldRecord.permissions.admin, listItemCompare,removeItem)== false
                   and
-                  Set.has(oldRecord.permissions.permissions, listItemHash,removeItem)== false
+                  Set.contains(oldRecord.permissions.permissions, listItemCompare,removeItem)== false
                 ){
                   removePermissionFromIndex(thisItem.list, [removeItem].vals());
                 };
@@ -1427,8 +1458,8 @@ module {
                   };
                   case(_){}
                 };
-                if(Set.has(oldRecord.permissions.admin, listItemHash, newItem) == false){
-                    Set.add(oldRecord.permissions.admin, listItemHash, newItem);
+                if(Set.contains(oldRecord.permissions.admin, listItemCompare, newItem) == false){
+                    ignore Set.add(oldRecord.permissions.admin, listItemCompare, newItem);
                   
                     addPermissionIndex(thisItem.list, newItem);
                 };
@@ -1446,20 +1477,20 @@ module {
                   };
                   case(_){}
                 };
-                if(Set.has(oldRecord.permissions.admin, listItemHash, removeItem)){
-                  ignore Set.remove(oldRecord.permissions.admin, listItemHash,removeItem);
+                if(Set.contains(oldRecord.permissions.admin, listItemCompare, removeItem)){
+                  ignore Set.remove(oldRecord.permissions.admin, listItemCompare,removeItem);
                 } else {
                   results.add(?(#Err(#NotFound)));
                   continue proc;
                 };
                 if(
-                  Set.has(oldRecord.permissions.read, listItemHash,removeItem)== false
+                  Set.contains(oldRecord.permissions.read, listItemCompare,removeItem)== false
                   and
-                  Set.has(oldRecord.permissions.write, listItemHash,removeItem)== false
+                  Set.contains(oldRecord.permissions.write, listItemCompare,removeItem)== false
                   and
-                  Set.has(oldRecord.permissions.admin, listItemHash,removeItem)== false
+                  Set.contains(oldRecord.permissions.admin, listItemCompare,removeItem)== false
                   and
-                  Set.has(oldRecord.permissions.permissions, listItemHash,removeItem)== false
+                  Set.contains(oldRecord.permissions.permissions, listItemCompare,removeItem)== false
                 ){
                   removePermissionFromIndex(thisItem.list, [removeItem].vals());
                 };
@@ -1477,8 +1508,8 @@ module {
                   };
                   case(_){}
                 };
-                if(Set.has(oldRecord.permissions.permissions :Set.Set<ListItem>, listItemHash, newItem) == false){
-                  Set.add(oldRecord.permissions.permissions, listItemHash, newItem);
+                if(Set.contains(oldRecord.permissions.permissions :Set.Set<ListItem>, listItemCompare, newItem) == false){
+                  ignore Set.add(oldRecord.permissions.permissions, listItemCompare, newItem);
                   addPermissionIndex(thisItem.list, newItem);
                 };
               };
@@ -1496,20 +1527,20 @@ module {
                   };
                   case(_){}
                 };
-               if(Set.has(oldRecord.permissions.permissions, listItemHash, removeItem)){
-                  ignore Set.remove(oldRecord.permissions.permissions, listItemHash, removeItem);
+               if(Set.contains(oldRecord.permissions.permissions, listItemCompare, removeItem)){
+                  ignore Set.remove(oldRecord.permissions.permissions, listItemCompare, removeItem);
                 } else {
                   results.add(?(#Err(#NotFound)));
                   continue proc;
                 };
                 if(
-                  Set.has(oldRecord.permissions.read, listItemHash,removeItem) == false
+                  Set.contains(oldRecord.permissions.read, listItemCompare,removeItem) == false
                   and
-                  Set.has(oldRecord.permissions.write, listItemHash,removeItem) == false
+                  Set.contains(oldRecord.permissions.write, listItemCompare,removeItem) == false
                   and
-                  Set.has(oldRecord.permissions.admin, listItemHash,removeItem) == false
+                  Set.contains(oldRecord.permissions.admin, listItemCompare,removeItem) == false
                   and
-                  Set.has(oldRecord.permissions.permissions, listItemHash,removeItem) == false
+                  Set.contains(oldRecord.permissions.permissions, listItemCompare,removeItem) == false
                 ){
                   removePermissionFromIndex(thisItem.list, [removeItem].vals());
                 };
@@ -1556,8 +1587,8 @@ module {
       };
 
       //check permissions
-      let cache = Map.new<Text, NamespaceRecord>();
-      let cachePermissions = Map.new<Text, NamespaceRecord>();
+      let cache = Map.empty<Text, NamespaceRecord>();
+      let cachePermissions = Map.empty<Text, NamespaceRecord>();
       let descriptionText = Buffer.Buffer<Text>(1);
       
       label proc for(thisItem in request.vals()){
@@ -1582,14 +1613,14 @@ module {
 
         //check permissions
         let search = if(actionText == "Change Permission"){
-          switch(Map.get(cachePermissions, Map.thash, thisItem.list # Principal.toText(caller))){
+          switch(Map.get(cachePermissions, Text.compare, thisItem.list # Principal.toText(caller))){
             case(null){
-              Map.get(cache, Map.thash, thisItem.list # Principal.toText(caller))
+              Map.get(cache, Text.compare, thisItem.list # Principal.toText(caller))
             };
             case(?cacheItem) ?cacheItem;
             };
         } else {
-          Map.get(cache, Map.thash, thisItem.list # Principal.toText(caller))
+          Map.get(cache, Text.compare, thisItem.list # Principal.toText(caller))
         };
 
         if(actionText != "Create"){
@@ -1604,16 +1635,16 @@ module {
                 };
               };
               
-              if(Set.has<ListItem>(found.permissions.admin, listItemHash, #Identity(caller))){
+              if(Set.contains<ListItem>(found.permissions.admin, listItemCompare, #Identity(caller))){
                   //cache the record
-                  ignore Map.put<Text,NamespaceRecord>(cache, Map.thash, thisItem.list # Principal.toText(caller), found);
-              } else if(Set.has<ListItem>(found.permissions.permissions, listItemHash, #Identity(caller))) {
+                  ignore Map.add<Text,NamespaceRecord>(cache, Text.compare, thisItem.list # Principal.toText(caller), found);
+              } else if(Set.contains<ListItem>(found.permissions.permissions, listItemCompare, #Identity(caller))) {
                   //cache the record
-                  ignore Map.put(cachePermissions, Map.thash, thisItem.list # Principal.toText(caller), found);
+                  ignore Map.add(cachePermissions, Text.compare, thisItem.list # Principal.toText(caller), found);
               } else if(findIdentityInCollectionList(caller, found.permissions.admin)){
-                ignore Map.put<Text,NamespaceRecord>(cache, Map.thash, thisItem.list # Principal.toText(caller), found);
+                ignore Map.add<Text,NamespaceRecord>(cache, Text.compare, thisItem.list # Principal.toText(caller), found);
               } else if(findIdentityInCollectionList(caller, found.permissions.permissions)){
-                ignore Map.put<Text,NamespaceRecord>(cachePermissions, Map.thash, thisItem.list # Principal.toText(caller), found);
+                ignore Map.add<Text,NamespaceRecord>(cachePermissions, Text.compare, thisItem.list # Principal.toText(caller), found);
               } else {
                 //check action for permission
                 return #Err("Principal does not have correct permissions" # debug_show(("list", thisItem.list, "caller", caller, "action", actionText, thisItem.action)));
@@ -1644,7 +1675,7 @@ module {
         };
       };
       
-      return #Ok(Text.join("\n", Buffer.toArray<Text>(descriptionText).vals()));
+      return #Ok(Text.join(Buffer.toArray<Text>(descriptionText).vals(), "\n"));
     };
 
     ignore environment.icrc10_register_supported_standards({
@@ -1693,9 +1724,9 @@ module {
       label search for(thisItem in BTree.scanLimit<List, NamespaceRecord>(state.namespaceStore, Text.compare, start, end, #fwd, maxTake).results.vals()){
         //only show items if read permission or anon has read
         switch(
-          Set.has<ListItem>(thisItem.1.permissions.admin, listItemHash, #Identity(caller)), 
-          Set.has<ListItem>(thisItem.1.permissions.read, listItemHash, #Identity(caller)), 
-          Set.has<ListItem>(thisItem.1.permissions.read, listItemHash, #Identity(anonPrincipal))){
+          Set.contains<ListItem>(thisItem.1.permissions.admin, listItemCompare, #Identity(caller)), 
+          Set.contains<ListItem>(thisItem.1.permissions.read, listItemCompare, #Identity(caller)), 
+          Set.contains<ListItem>(thisItem.1.permissions.read, listItemCompare, #Identity(anonPrincipal))){
           case(false, false, false){
             if(findIdentityInCollectionList(caller, thisItem.1.permissions.admin) == false){
               if(findIdentityInCollectionList(caller, thisItem.1.permissions.read) == false){
@@ -1739,7 +1770,7 @@ module {
         return false;
       };
       let ?record = BTree.get(state.namespaceStore, Text.compare, list) else return false;
-      let found = switch(Map.get(record.members, listItemHash, #Identity(principal))){
+      let found = switch(Map.get(record.members, listItemCompare, #Identity(principal))){
         case(?val) return true;
         case(null) false;
       };
@@ -1763,21 +1794,21 @@ module {
     public func listChain(caller: Principal, list : Text, depth: Nat) : Set.Set<Text>{
       debug d(debug_channel.announce, debug_show(("ListChain", list, depth)));
       if(depth > 10){
-        return Set.new<Text>();
+        return Set.empty<Text>();
       };
 
-      let result = Set.new<Text>();
+      let result = Set.empty<Text>();
 
-      let ?record = Map.get(state.memberIndex, listItemHash, #List(list)) else  return Set.new<Text>();
+      let ?record = Map.get(state.memberIndex, listItemCompare, #List(list)) else  return Set.empty<Text>();
 
-      label search for(thisItem in Set.keys(record)){
+      label search for(thisItem in Set.values(record)){
 
         switch(BTree.get(state.namespaceStore, Text.compare, thisItem)){
           case(?record){
             debug d(debug_channel.queryItem, debug_show(("Found record", record)));
             //check permissions
-            if(Set.has<ListItem>(record.permissions.admin, listItemHash, #Identity(caller)) == false){
-              if(Set.has<ListItem>(record.permissions.read, listItemHash, #Identity(caller)) == false){
+            if(Set.contains<ListItem>(record.permissions.admin, listItemCompare, #Identity(caller)) == false){
+              if(Set.contains<ListItem>(record.permissions.read, listItemCompare, #Identity(caller)) == false){
                 if(findIdentityInCollectionList(caller, record.permissions.admin) == false){
                   if(findIdentityInCollectionList(caller, record.permissions.read) == false){
                     continue search;
@@ -1795,16 +1826,16 @@ module {
 
       debug d(debug_channel.announce, debug_show(("ListChain has member index", record)));
 
-      label proc for(thisItem in Set.keys(record)){
-        if(Set.has(result, Set.thash, thisItem)){
+      label proc for(thisItem in Set.values(record)){
+        if(Set.contains(result, Text.compare, thisItem)){
           debug d(debug_channel.announce, debug_show(("ListChain has member continuing ", thisItem)));
           continue proc;
         };
-        Set.add(result, Set.thash, thisItem);
-        for(thisSub in Set.keys(listChain(caller, thisItem, depth + 1)))
+        ignore Set.add(result, Text.compare, thisItem);
+        for(thisSub in Set.values(listChain(caller, thisItem, depth + 1)))
         {
           debug d(debug_channel.announce, debug_show(("ListChain has member adding ", thisSub)));
-          Set.add(result, Set.thash, thisSub );
+          ignore Set.add(result, Text.compare, thisSub );
         };
       };
 
@@ -1820,7 +1851,7 @@ module {
         return false;
       };
       let ?record = BTree.get(state.namespaceStore, Text.compare, list) else return false;
-      let found = switch(Map.get(record.members, listItemHash, #List(namespace))){
+      let found = switch(Map.get(record.members, listItemCompare, #List(namespace))){
         case(?val) return true;
         case(null) false;
       };
@@ -1846,9 +1877,9 @@ module {
       let ?record = BTree.get(state.namespaceStore, Text.compare, namespace) else return [];
 
       switch(
-        Set.has<ListItem>(record.permissions.admin, listItemHash, #Identity(caller)), 
-        Set.has<ListItem>(record.permissions.read, listItemHash, #Identity(caller)),
-        Set.has<ListItem>(record.permissions.read, listItemHash, #Identity(anonPrincipal))){
+        Set.contains<ListItem>(record.permissions.admin, listItemCompare, #Identity(caller)), 
+        Set.contains<ListItem>(record.permissions.read, listItemCompare, #Identity(caller)),
+        Set.contains<ListItem>(record.permissions.read, listItemCompare, #Identity(anonPrincipal))){
         case(false, false, false){
           if(findIdentityInCollectionList(caller, record.permissions.admin) == false){
             if(findIdentityInCollectionList(caller, record.permissions.read) == false){
@@ -1887,7 +1918,7 @@ module {
         } else{
           switch(prev){
             case(?prev){
-              if(listItemHash.1(prev, thisItem.0)){
+              if(listItemCompare(prev, thisItem.0) == #equal){
                 bFound := true;
               };
             };
@@ -1900,7 +1931,7 @@ module {
     };
 
     public func findIdentityInCollectionList(principal : Principal, collection : Set.Set<ListItem>) : Bool{
-      for(thisItem in Set.keys<ListItem>(collection)){
+      for(thisItem in Set.values<ListItem>(collection)){
         switch(thisItem){
           case(#List(val)){
             if(findIdentityInListDepth(principal, val, 0)){
@@ -1918,9 +1949,9 @@ module {
       let ?record = BTree.get(state.namespaceStore, Text.compare, namespace) else return [];
 
       switch(
-        Set.has<ListItem>(record.permissions.admin, listItemHash, #Identity(caller)), 
-        Set.has<ListItem>(record.permissions.permissions, listItemHash, #Identity(caller)),
-        Set.has<ListItem>(record.permissions.read, listItemHash, #Identity(anonPrincipal))){
+        Set.contains<ListItem>(record.permissions.admin, listItemCompare, #Identity(caller)), 
+        Set.contains<ListItem>(record.permissions.permissions, listItemCompare, #Identity(caller)),
+        Set.contains<ListItem>(record.permissions.read, listItemCompare, #Identity(anonPrincipal))){
         case(false, false, false){
           if(findIdentityInCollectionList(caller, record.permissions.admin) == false){
             if(findIdentityInCollectionList(caller, record.permissions.permissions) == false){
@@ -1993,7 +2024,7 @@ module {
 
       //todo: refactor this DNRY
       if(scanRead and skipRead==false){
-        label searchRead for(thisItem in Set.keys<ListItem>(record.permissions.read)){
+        label searchRead for(thisItem in Set.values<ListItem>(record.permissions.read)){
           if(bFound){
             results.add((#Read, thisItem));
             if(results.size() == maxTake){
@@ -2011,7 +2042,7 @@ module {
       };
       
       if(scanWrite and skipWrite==false){
-        label searchWrite for(thisItem in Set.keys<ListItem>(record.permissions.write)){
+        label searchWrite for(thisItem in Set.values<ListItem>(record.permissions.write)){
           if(bFound){
             results.add((#Write, thisItem));
             if(results.size() == maxTake){
@@ -2029,7 +2060,7 @@ module {
       };
 
       if(scanAdmin and skipAdmin==false){
-        label searchAdmin for(thisItem in Set.keys<ListItem>(record.permissions.admin)){
+        label searchAdmin for(thisItem in Set.values<ListItem>(record.permissions.admin)){
           if(bFound){
             results.add((#Admin, thisItem));
             if(results.size() == maxTake){
@@ -2047,7 +2078,7 @@ module {
       };
 
       if(scanPermissions and skipPermissions==false){
-        label searchPermissions for(thisItem in Set.keys<ListItem>(record.permissions.permissions)){
+        label searchPermissions for(thisItem in Set.values<ListItem>(record.permissions.permissions)){
           if(bFound){
             results.add((#Permissions, thisItem));
             if(results.size() == maxTake){
@@ -2071,9 +2102,9 @@ module {
       let ?record = BTree.get(state.namespaceStore, Text.compare, namespace) else return [];
 
       switch(
-        Set.has<ListItem>(record.permissions.admin, listItemHash, #Identity(caller)), 
-        Set.has<ListItem>(record.permissions.read, listItemHash, #Identity(caller)),
-        Set.has<ListItem>(record.permissions.read, listItemHash, #Identity(anonPrincipal))){
+        Set.contains<ListItem>(record.permissions.admin, listItemCompare, #Identity(caller)), 
+        Set.contains<ListItem>(record.permissions.read, listItemCompare, #Identity(caller)),
+        Set.contains<ListItem>(record.permissions.read, listItemCompare, #Identity(anonPrincipal))){
         case(false, false, false){
           if(findIdentityInCollectionList(caller, record.permissions.admin) == false){
             if(findIdentityInCollectionList(caller, record.permissions.read) == false){
@@ -2119,7 +2150,7 @@ module {
         } else{
           switch(prev){
             case(?prev){
-              if(listItemHash.1(#List(prev), thisItem.0)){
+              if(listItemCompare(#List(prev), thisItem.0) == #equal){
                 bFound := true;
               };
                debug d(debug_channel.announce, debug_show(("Get list lists bFound now?", bFound)));
@@ -2151,7 +2182,7 @@ module {
         case(null) true;
       };
 
-      let foundIndex = switch(Map.get(state.memberIndex, listItemHash, listItem)){
+      let foundIndex = switch(Map.get(state.memberIndex, listItemCompare, listItem)){
         case(?val) val;
         case(null) {
           debug d(debug_channel.queryItem, debug_show(("no idex found in ", state.memberIndex)));
@@ -2161,14 +2192,14 @@ module {
 
       debug d(debug_channel.queryItem, debug_show(("Found index", foundIndex)));
 
-      label search for(thisItem in Set.keys(foundIndex)){
+      label search for(thisItem in Set.values(foundIndex)){
 
         switch(BTree.get(state.namespaceStore, Text.compare, thisItem)){
           case(?record){
             debug d(debug_channel.queryItem, debug_show(("Found record", record)));
             //check permissions
-            if(Set.has<ListItem>(record.permissions.admin, listItemHash, #Identity(caller)) == false){
-              if(Set.has<ListItem>(record.permissions.read, listItemHash, #Identity(caller)) == false){
+            if(Set.contains<ListItem>(record.permissions.admin, listItemCompare, #Identity(caller)) == false){
+              if(Set.contains<ListItem>(record.permissions.read, listItemCompare, #Identity(caller)) == false){
                 if(findIdentityInCollectionList(caller, record.permissions.admin) == false){
                   if(findIdentityInCollectionList(caller, record.permissions.read) == false){
                     continue search;
@@ -2208,7 +2239,7 @@ module {
       for(thisItem in results.vals()){
         debug d(debug_channel.queryItem, debug_show(("Checking sub list", thisItem)));
         //are these lists a member of any other lists
-        for(thisSub in Set.keys(listChain(caller, thisItem, 0))){
+        for(thisSub in Set.values(listChain(caller, thisItem, 0))){
           debug d(debug_channel.queryItem, debug_show(("Adding sub list", thisSub)));
           results.add(thisSub);
         };
@@ -2227,7 +2258,7 @@ module {
         debug d(debug_channel.queryItem, debug_show(("Processing item", thisItem)));
 
         //get the lists this item is on
-        let foundSet = switch(Map.get(state.memberIndex, listItemHash, thisItem.0)){
+        let foundSet = switch(Map.get(state.memberIndex, listItemCompare, thisItem.0)){
           case(?val) val;
           case(null) {
             debug d(debug_channel.queryItem, debug_show(("Not found", thisItem.0)));
@@ -2236,11 +2267,11 @@ module {
           }
         };
 
-        let foundLists = Set.fromIter(Set.keys(foundSet), Set.thash);
+        let foundLists = Set.fromIter(Set.values(foundSet), Text.compare);
 
-        for(thisList in Set.keys(foundSet)){
-          for(thisSub in Set.keys(listChain(caller, thisList, 0))){
-            Set.add(foundLists, Set.thash, thisSub);
+        for(thisList in Set.values(foundSet)){
+          for(thisSub in Set.values(listChain(caller, thisList, 0))){
+            ignore Set.add(foundLists, Text.compare, thisSub);
           };
         };
 
@@ -2253,7 +2284,7 @@ module {
           label ors for(thisOr in thisCheck.vals()){
             debug d(debug_channel.queryItem, debug_show(("Processing check ors ", thisOr)));
             //or levels are or'd together
-            if(Set.has(foundLists, Set.thash, thisOr)){
+            if(Set.contains(foundLists, Text.compare, thisOr)){
               debug d(debug_channel.queryItem, debug_show(("Found", thisOr)));
               continue ands;
             };
@@ -2304,24 +2335,24 @@ module {
     };
 
     private func addPermissionIndex(namespace: Text, permission: MigrationTypes.Current.ListItem){
-      let found = switch(Map.get(state.permissionsIndex, listItemHash, permission)){
+      let found = switch(Map.get(state.permissionsIndex, listItemCompare, permission)){
         case(?val) val;
         case(null){
-          let newSet = Set.new<Text>();
-          ignore Map.put(state.permissionsIndex, listItemHash, permission, newSet);
+          let newSet = Set.empty<Text>();
+          ignore Map.add(state.permissionsIndex, listItemCompare, permission, newSet);
           newSet;
         };
       };
-      Set.add(found, Set.thash, namespace);
+      ignore Set.add(found, Text.compare, namespace);
     };
 
     private func removePermissionFromIndex(namespace : Text, items: Iter.Iter<MigrationTypes.Current.ListItem>){
       for(thisPermission in items){
-        switch(Map.get(state.permissionsIndex, listItemHash, thisPermission)){
+        switch(Map.get(state.permissionsIndex, listItemCompare, thisPermission)){
           case(?val){
-            ignore Set.remove(val, Set.thash, namespace);
+            ignore Set.remove(val, Text.compare, namespace);
             if(Set.size(val) == 0){
-              ignore Map.remove(state.permissionsIndex, listItemHash, thisPermission)
+              ignore Map.remove(state.permissionsIndex, listItemCompare, thisPermission)
             };
           };
           case(null){};
@@ -2331,11 +2362,11 @@ module {
 
     private func removeMemberFromIndex(namespace : Text, items: Iter.Iter<MigrationTypes.Current.ListItem>){
       for(thisMember in items){
-        switch(Map.get(state.memberIndex, listItemHash, thisMember)){
+        switch(Map.get(state.memberIndex, listItemCompare, thisMember)){
           case(?val){
-            ignore Set.remove(val, Set.thash, namespace);
+            ignore Set.remove(val, Text.compare, namespace);
             if(Set.size(val) == 0){
-              ignore Map.remove(state.memberIndex, listItemHash, thisMember)
+              ignore Map.remove(state.memberIndex, listItemCompare, thisMember)
             };
           };
           case(null){};
@@ -2366,30 +2397,30 @@ module {
         return false;
       };
 
-      for(thisPermission in Set.keys(a.permissions.read)){
-        if(Set.has<ListItem>(b.permissions.read, listItemHash, thisPermission)== false){
+      for(thisPermission in Set.values(a.permissions.read)){
+        if(Set.contains<ListItem>(b.permissions.read, listItemCompare, thisPermission)== false){
           return false;
         };
       };
-      for(thisPermission in Set.keys(a.permissions.admin)){
-        if(Set.has<ListItem>(b.permissions.read, listItemHash, thisPermission : ListItem) == false){
+      for(thisPermission in Set.values(a.permissions.admin)){
+        if(Set.contains<ListItem>(b.permissions.read, listItemCompare, thisPermission : ListItem) == false){
           return false;
         };
       };
-      for(thisPermission in Set.keys(a.permissions.write)){
-        if(Set.has<ListItem>(b.permissions.read, listItemHash, thisPermission) == false){
+      for(thisPermission in Set.values(a.permissions.write)){
+        if(Set.contains<ListItem>(b.permissions.read, listItemCompare, thisPermission) == false){
           return false;
         };
       };
-      for(thisPermission in Set.keys(a.permissions.permissions)){
-        if( Set.has<ListItem>(b.permissions.read, listItemHash, thisPermission) == false){
+      for(thisPermission in Set.values(a.permissions.permissions)){
+        if( Set.contains<ListItem>(b.permissions.read, listItemCompare, thisPermission) == false){
           return false;
         };
       };
       
       
       for(thisMember in Map.keys(a.members)){
-        switch(Map.get(b.members, listItemHash, thisMember)){
+        switch(Map.get(b.members, listItemCompare, thisMember)){
           case(null){
             return false;
           };
@@ -2399,12 +2430,12 @@ module {
 
      
       for(thisMetadata in a.metadata.vals()){
-        if(Array.indexOf(thisMetadata, b.metadata, func(a: (Text, DataItem), b: (Text,DataItem)) : Bool{
+        if(Array.indexOf<(Text, DataItem)>(b.metadata, func(a: (Text, DataItem), b: (Text,DataItem)) : Bool{
           if(Text.equal(a.0, b.0) and ICRC16.eqShared(a.1, b.1)){
             return true;
           };
           return false;
-        }) == null){
+        }, thisMetadata) == null){
           return false;
         };
       };
@@ -2413,10 +2444,10 @@ module {
     };
 
     private func removeNamespaceFromStore(record: NamespaceRecord){
-       removePermissionFromIndex(record.namespace, Set.keys(record.permissions.read));
-       removePermissionFromIndex(record.namespace, Set.keys(record.permissions.write));
-       removePermissionFromIndex(record.namespace, Set.keys(record.permissions.admin));
-       removePermissionFromIndex(record.namespace, Set.keys(record.permissions.permissions));
+       removePermissionFromIndex(record.namespace, Set.values(record.permissions.read));
+       removePermissionFromIndex(record.namespace, Set.values(record.permissions.write));
+       removePermissionFromIndex(record.namespace, Set.values(record.permissions.admin));
+       removePermissionFromIndex(record.namespace, Set.values(record.permissions.permissions));
 
       removeMemberFromIndex(record.namespace, Map.keys(record.members));
       ignore BTree.delete(state.namespaceStore, Text.compare, record.namespace);
@@ -2438,29 +2469,29 @@ module {
       //add new items
       ignore BTree.insert<Text, NamespaceRecord>(state.namespaceStore, Text.compare, record.namespace, record);
      
-      for(thisPermission in Set.keys(record.permissions.read)){
+      for(thisPermission in Set.values(record.permissions.read)){
         addPermissionIndex(record.namespace, thisPermission);
       };
-      for(thisPermission in Set.keys(record.permissions.permissions)){
+      for(thisPermission in Set.values(record.permissions.permissions)){
        addPermissionIndex(record.namespace, thisPermission);
       };
-      for(thisPermission in Set.keys(record.permissions.write)){
+      for(thisPermission in Set.values(record.permissions.write)){
        addPermissionIndex(record.namespace, thisPermission);
       };
-      for(thisPermission in Set.keys(record.permissions.admin)){
+      for(thisPermission in Set.values(record.permissions.admin)){
        addPermissionIndex(record.namespace, thisPermission);
       };
 
       for(thisMember in Map.entries(record.members)){
-        let found = switch(Map.get(state.memberIndex, listItemHash, thisMember.0)){
+        let found = switch(Map.get(state.memberIndex, listItemCompare, thisMember.0)){
           case(?val) val;
           case(null){
-            let newSet = Set.new<Text>();
-            ignore Map.put(state.memberIndex, listItemHash, thisMember.0, newSet);
+            let newSet = Set.empty<Text>();
+            ignore Map.add(state.memberIndex, listItemCompare, thisMember.0, newSet);
             newSet;
           };
         };
-        Set.add(found, Set.thash, record.namespace);
+        ignore Set.add(found, Text.compare, record.namespace);
       };
     };
 
@@ -2667,14 +2698,14 @@ module {
           };
         };
         case(_){
-          D.trap("Invalid token");
+          Runtime.trap("Invalid token");
         };
       };
 
       switch(expires){
         case(?exp){
           if(exp < get_time()){
-            D.trap("Expired token");
+            Runtime.trap("Expired token");
           };
         };
         case(null){};
@@ -2685,19 +2716,19 @@ module {
           switch(Array.find<ICRC16MapItem>(val, func(x: ICRC16MapItem){
             x.0 == "nonce";
           })){
-            case(null) D.trap("No nonce found");
+            case(null) Runtime.trap("No nonce found");
             case(?val){
               switch(val.1){
                 case(#Nat(val)){
                   val;
                 };
-                case(_) D.trap("Invalid nonce");
+                case(_) Runtime.trap("Invalid nonce");
               };
             };
           };
         };
         case(_){
-          D.trap("Invalid token");
+          Runtime.trap("Invalid token");
         };
       };
 
@@ -2707,7 +2738,7 @@ module {
           let foundWitness = ct.reveal([Text.encodeUtf8("icrc75:certs"), encodeBigEndian(nonce)]);
           switch(foundWitness){
             case(#empty){
-              D.trap("No witness found");
+              Runtime.trap("No witness found");
             };
             case(_){};
 
@@ -2720,14 +2751,14 @@ module {
             certificate = switch(CertifiedData.getCertificate()){
               case(null){
                 debug d(debug_channel.certificate, "certified returned null");
-                D.trap("certified returned null");
+                Runtime.trap("certified returned null");
               };
               case(?val) val;
             };
           };
         };
         case(_){
-          D.trap("No store");
+          Runtime.trap("No store");
         };
       };
     };
@@ -2749,7 +2780,7 @@ module {
       let byteCount = (bitCount + 7) / 8;
 
       var buffer = Buffer.Buffer<Nat8>(byteCount);
-      for (i in Iter.range(0, byteCount-1)) {
+      for (i in Nat.range(0, byteCount)) {
         let byteValue = Nat.div(nat, Nat.pow(256, i)) % 256;
         buffer.insert(i, Nat8.fromNat(byteValue));
       };
@@ -2762,173 +2793,19 @@ module {
       Int.abs(Time.now());
     };
 
-    ///////////
-    // ICRC85 ovs
-    //////////
-
-    private var _icrc85init = false;
-
-    private func ensureCycleShare<system>() : (){
-      if(_icrc85init == true) return;
-      _icrc85init := true;
-
-      ignore Timer.setTimer<system>(#nanoseconds(OneDay), scheduleCycleShare);
-
-      tt<system>().registerExecutionListenerAsync(?"icrc85:ovs:shareaction:icrc75", handleIcrc85Action : TT.ExecutionAsyncHandler);
-    };
-
-    private func scheduleCycleShare<system>() : async() {
-      //check to see if it already exists
-      debug d(debug_channel.announce, "in schedule cycle share");
-      switch(state.icrc85.nextCycleActionId){
-        case(?val){
-          switch(Map.get(tt<system>().getState().actionIdIndex, Map.nhash, val)){
-            case(?time) {
-              //already in the queue
-              return;
-            };
-            case(null) {};
-          };
-        };
-        case(null){};
-      };
-
-      let result = tt<system>().setActionSync<system>(get_time(), ({actionType = "icrc85:ovs:shareaction:icrc75"; params = Blob.fromArray([]);}));
-      state.icrc85.nextCycleActionId := ?result.id;
-    };
-
-    private func handleIcrc85Action<system>(id: TT.ActionId, action: TT.Action) : async* Star.Star<TT.ActionId, TT.Error>{
-
-      D.print("in handle timer async " # debug_show((id,action)));
-      switch(action.actionType){
-        case("icrc85:ovs:shareaction:icrc75"){
-          await* shareCycles<system>();
-          #awaited(id);
-        };
-        case(_) #trappable(id);
+    /// `get_icrc85_stats`
+    ///
+    /// Returns the current ICRC-85 Open Value Sharing statistics.
+    public func get_icrc85_stats() : {
+      activeActions: Nat;
+      lastActionReported: ?Nat;
+      nextCycleActionId: ?Nat;
+    } {
+      {
+        activeActions = state.org_icdevs_ovs_fixed_state.activeActions;
+        lastActionReported = state.org_icdevs_ovs_fixed_state.lastActionReported;
+        nextCycleActionId = state.org_icdevs_ovs_fixed_state.nextCycleActionId;
       };
     };
-
-    private func shareCycles<system>() : async*(){
-      debug d(debug_channel.announce, "in share cycles ");
-      let lastReportId = switch(state.icrc85.lastActionReported){
-        case(?val) val;
-        case(null) 0;
-      };
-
-      debug d(debug_channel.announce, "last report id " # debug_show(lastReportId));
-
-      let actions = if(state.icrc85.activeActions > 0){
-        state.icrc85.activeActions;
-      } else {1;};
-
-      debug d(debug_channel.announce, "actions " # debug_show(actions));
-
-      state.icrc85.activeActions := 0;
-
-      var cyclesToShare = 1_000_000_000_000; //1 XDR
-
-      if(actions > 0){
-        let additional = Nat.div(actions, 10000);
-        debug d(debug_channel.announce, "additional " # debug_show(additional));
-        cyclesToShare := cyclesToShare + (additional * 1_000_000_000_000);
-        if(cyclesToShare > 100_000_000_000_000) cyclesToShare := 100_000_000_000_000;
-      };
-
-      debug d(debug_channel.announce, "cycles to share" # debug_show(cyclesToShare));
-
-      try{
-        await* ovsfixed.shareCycles<system>({
-          environment = do?{environment.advanced!.icrc85};
-          namespace = "org.icdevs.libraries.icrc75";
-          actions = 1;
-          schedule = func <system>(period: Nat) : async* (){
-            let result = tt<system>().setActionSync<system>(get_time() + period, {actionType = "icrc85:ovs:shareaction:icrc75"; params = Blob.fromArray([]);});
-            state.icrc85.nextCycleActionId := ?result.id;
-          };
-          cycles = cyclesToShare;
-        });
-      } catch(e){
-        debug d(debug_channel.announce, "error sharing cycles" # Error.message(e));
-      };
-
-    };
-
-  private func reportTTExecution(execInfo: TT.ExecutionReport): Bool{
-    debug d(debug_channel.timerTool, "CANISTER: TimerTool Execution: " # debug_show(execInfo));
-    return false;
-  };
-
-  private func reportTTError(errInfo: TT.ErrorReport) : ?Nat{
-    debug d(debug_channel.timerTool, "CANISTER: TimerTool Error: " # debug_show(errInfo));
-    return null;
-  };
-
-    private var tt_ : ?TT.TimerTool = null;
-
-
-    private func tt<system>() : TT.TimerTool {
-      switch(tt_){
-        case(?val) val;
-        case(null){
-          
-          let foundClass = switch(environment.tt){
-            case(?val){
-              tt_ := ?val;
-              val : TT.TimerTool;
-            };
-            case(null){
-              //todo: recover from existing state?
-
-              let initManager = ClassPlusLib.ClassPlusInitializationManager(state.owner, canister, true);
-
-              
-
-              let local_tt  = TT.Init<system>({
-                manager = initManager;
-                initialState = switch(state.tt){
-                  case(null) TT.initialState();
-                  case(val) switch(val){
-                    case(?val) val;
-                    case(null) TT.initialState();
-                  };
-                };
-                args = null;
-                pullEnvironment = ?(func() : TT.Environment {
-                  {      
-                    advanced = null;
-                    reportExecution = ?reportTTExecution;
-                    reportError = ?reportTTError;
-                    syncUnsafe = null;
-                    reportBatch = null;
-                  };
-                });
-
-                onInitialize = ?(func (newClass: TT.TimerTool) : async* () {
-                  D.print("Initializing TimerTool");
-                  newClass.initialize<system>();
-                  //do any work here necessary for initialization
-                });
-                onStorageChange = func(a_state: TT.State) {
-                  state.tt := ?a_state;
-                }
-              });
-
-              tt_ := ?(local_tt() : TT.TimerTool);
-              local_tt();
-            };
-            
-          };
-          
-
-          foundClass.registerExecutionListenerAsync(?"icrc85:ovs:shareaction:icrc75", handleIcrc85Action : TT.ExecutionAsyncHandler);
-          debug d(debug_channel.announce, "Timer tool set up");
-          ignore Timer.setTimer<system>(#nanoseconds(OneDay), scheduleCycleShare);
-
-          foundClass;
-        };
-      };
-    };
-
   };
 };
