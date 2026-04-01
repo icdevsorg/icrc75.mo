@@ -245,19 +245,13 @@ For more details on the ICRC-75 standard, refer to the [ICRC-75 Standard Documen
 
 ## OVS Default Behavior
 
-This motoko class has a default [ICRC-85 Open Value Sharing](https://github.com/dfinity/ICRC/issues/85) behavior that sends cycles to the developer to provide funding for maintenance and continued development. In accordance with the OVS specification, this behavior may be overridden by another OVS sharing heuristic or turned off. We encourage all users to implement some form of OVS sharing as it helps us provide quality software and support to the community.
+This motoko class has a default OVS behavior that sends cycles to the developer to provide funding for maintenance and continued development. In accordance with the OVS specification and ICRC85, this behavior may be overridden by another OVS sharing heuristic or turned off. We encourage all users to implement some form of OVS sharing as it helps us provide quality software and support to the community.
 
-### OVS Roll-Up
+Default behavior: 1 XDR per month for up to 10,000 actions;  1 additional XDR per month for each additional 10,000 actions. Max of 10 XDR per month per canister.
 
-| Component | Namespace | Actions Tracked | Cycle Formula | Period Reset |
-|-----------|-----------|-----------------|---------------|--------------|
-| **timer-tool** | `org.icdevs.icrc85.supertimer` | Timer actions scheduled | 1 XDR base + 1 XDR per 100K actions, max 100 XDR | Yes (delta since last report) |
-| **ICRC-75** | `org.icdevs.icrc85.icrc75` | List membership and property changes | 1 XDR base + 100M cycles per action, max 100 XDR | Yes |
+Default Beneficiary: ICDevs.org
 
-- **1 XDR ≈ 1 trillion cycles** (1,000,000,000,000)
-- All OVS payments are capped at 50% of the canister's current cycle balance for safety
-- 7-day grace period before first share, then every 30 days
-- Default Beneficiary: [ICDevs.org](https://icdevs.org)
+Additional Behavior: Utilizes the timerTool by ICDevs.org: https://github.com/icdevsorg/timerTool
 
 ## Contributing
 
@@ -266,6 +260,17 @@ We welcome contributions to improve the ICRC-75 implementation. Please submit is
 ## License
 
 This project is licensed under the MIT License.
+
+## OVS Default Behavior
+
+This motoko class has a default OVS behavior that sends cycles to the developer to provide funding for maintenance and continued development. In accordance with the OVS specification and ICRC85, this behavior may be overridden by another OVS sharing heuristic or turned off. We encourage all users to implement some form of OVS sharing as it helps us provide quality software and support to the community.
+
+Default behavior: 1 XDR per 10000 list actions processed per month up to 100 XDR;
+
+Default Beneficiary: ICDevs.org
+
+Dependent Libraries: 
+ - https://mops.one/timer-tool
 
 
 ## AstroFlora
